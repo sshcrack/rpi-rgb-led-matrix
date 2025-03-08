@@ -254,7 +254,7 @@ public:
   // 28Hz animation, nicely locked to the refresh-rate).
   // If you combine this with Options::limit_refresh_rate_hz you can create
   // time-correct animations.
-  FrameCanvas *SwapOnVSync(FrameCanvas *other, unsigned framerate_fraction = 1);
+  [[nodiscard]] FrameCanvas *SwapOnVSync(FrameCanvas *other, unsigned framerate_fraction = 1);
 
   // -- Setting shape and behavior of matrix.
 
