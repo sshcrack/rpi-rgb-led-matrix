@@ -305,6 +305,18 @@ public:
     }
   }
   
+  bool GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const override {
+    if (x < 0 || x >= width_ || y < 0 || y >= height_) {
+      return false;
+    }
+    
+    const int pos = y * width_ + x;
+    *r = pixels_[pos].r;
+    *g = pixels_[pos].g;
+    *b = pixels_[pos].b;
+    return true;
+  }
+  
 private:
   const int width_;
   const int height_;
@@ -405,6 +417,11 @@ public:
   void Fill(uint8_t r, uint8_t g, uint8_t b) {
     if (!active_buffer_) return;
     active_buffer_->Fill(r, g, b);
+  }
+  
+  bool GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const {
+    if (!active_buffer_) return false;
+    return active_buffer_->GetPixel(x, y, r, g, b);
   }
   
   // Frame canvas management
@@ -525,6 +542,10 @@ void EmulatorMatrix::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
 
 void EmulatorMatrix::Clear() { impl_->Clear(); }
 void EmulatorMatrix::Fill(uint8_t r, uint8_t g, uint8_t b) { impl_->Fill(r, g, b); }
+
+bool EmulatorMatrix::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const {
+  return impl_->GetPixel(x, y, r, g, b);
+}
 
 // Frame canvas management
 FrameCanvas* EmulatorMatrix::CreateFrameCanvas() {

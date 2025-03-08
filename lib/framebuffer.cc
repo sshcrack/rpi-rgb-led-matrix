@@ -898,5 +898,70 @@ void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {
     }
   }
 }
+
+bool Framebuffer::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const {
+  if (x < 0 || x >= width() || y < 0 || y >= height()) {
+    return false;
+  }
+  
+  const PixelDesignator *designator = (*shared_mapper_)->get(x, y);
+  if (designator == NULL || designator->gpio_word < 0) {
+    return false;  // non-used pixel marker
+  }
+  
+  // We need to reconstruct the color by checking each bit plane
+  uint16_t red = 0, green = 0, blue = 0;
+  const int min_bit_plane = kBitPlanes - pwm_bits_;
+  
+  const gpio_bits_t *bits = bitplane_buffer_ + designator->gpio_word;
+  const gpio_bits_t r_bit = designator->r_bit;
+  const gpio_bits_t g_bit = designator->g_bit;
+  const gpio_bits_t b_bit = designator->b_bit;
+  
+  // Check each bitplane to reconstruct the color
+  for (int bit = min_bit_plane; bit < kBitPlanes; ++bit) {
+    const gpio_bits_t *plane_bits = bits + (bit * columns_);
+    if (*plane_bits & r_bit) red |= (1 << (bit - min_bit_plane));
+    if (*plane_bits & g_bit) green |= (1 << (bit - min_bit_plane));
+    if (*plane_bits & b_bit) blue |= (1 << (bit - min_bit_plane));
+  }
+  
+  // Convert back from pwm_bits to 8-bit color
+  const int shift = pwm_bits_ - 8;
+  if (shift > 0) {
+    *r = red >> shift;
+    *g = green >> shift;
+    *b = blue >> shift;
+  } else if (shift < 0) {
+    *r = red << -shift;
+    *g = green << -shift;
+    *b = blue << -shift;
+  } else {
+    *r = red;
+    *g = green;
+    *b = blue;
+  }
+  
+  // Handle brightness and inverse_color corrections
+  if (brightness_ < 100) {
+    *r = *r * 100 / brightness_;
+    *g = *g * 100 / brightness_;
+    *b = *b * 100 / brightness_;
+    
+    // Cap at 255
+    *r = *r > 255 ? 255 : *r;
+    *g = *g > 255 ? 255 : *g;
+    *b = *b > 255 ? 255 : *b;
+  }
+  
+  if (inverse_color_) {
+    *r = 255 - *r;
+    *g = 255 - *g;
+    *b = 255 - *b;
+  }
+  
+  return true;
+}
+
 }  // namespace internal
 }  // namespace rgb_matrix

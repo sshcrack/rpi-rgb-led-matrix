@@ -821,4 +821,12 @@ bool FrameCanvas::Deserialize(const char *data, size_t len) {
 void FrameCanvas::CopyFrom(const FrameCanvas &other) {
   frame_->CopyFrom(other.frame_);
 }
+
+// Implementation of RGBMatrix Canvas interface.
+bool FrameCanvas::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const {
+  if (x < 0 || x >= width() || y < 0 || y >= height()) {
+    return false;
+  }
+  return frame_->GetPixel(x, y, r, g, b);
+}
 }  // end namespace rgb_matrix

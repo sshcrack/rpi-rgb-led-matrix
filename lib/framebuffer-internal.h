@@ -127,6 +127,7 @@ public:
   virtual int width() const;
   virtual int height() const;
   virtual void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
+  virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
   void SetPixels(int x, int y, int width, int height, Color *colors);
   virtual void Clear();
   virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
