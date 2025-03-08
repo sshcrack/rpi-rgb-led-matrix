@@ -772,6 +772,11 @@ void RGBMatrix::SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue)
   impl_->active_->SetPixel(x, y, red, green, blue);
 }
 
+bool RGBMatrix::GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const
+{
+  return impl_->active_->GetPixel(x, y, red, green, blue);
+}
+
 void RGBMatrix::Clear() {
   impl_->active_->Clear();
 }
