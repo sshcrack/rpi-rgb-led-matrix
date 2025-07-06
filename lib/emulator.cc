@@ -590,6 +590,8 @@ bool EmulatorMatrix::StartRefresh() {
   return true;
 }
 
+//TODO Use methods from options-initialize.cc to consume flags
+
 // Parse emulator-specific flags
 bool ParseEmulatorOptionsFromFlags(int* argc, char*** argv,
                                   EmulatorOptions* options,
