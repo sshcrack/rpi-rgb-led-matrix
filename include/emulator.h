@@ -85,6 +85,7 @@ public:
   
   // Start the refresh thread
   bool StartRefresh();
+  void Render();
 
 private:
   class Impl;

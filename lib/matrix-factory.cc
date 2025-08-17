@@ -34,12 +34,6 @@ namespace rgb_matrix
         {
             // Create an emulator
             result = EmulatorMatrix::Create(options.led_options, options.emulator_options);
-            if (result)
-            {
-                // Start the refresh thread for the emulator
-                std::cout << "Starting refresh thread" << std::endl;
-                static_cast<EmulatorMatrix *>(result)->StartRefresh();
-            }
         }
         else
         {

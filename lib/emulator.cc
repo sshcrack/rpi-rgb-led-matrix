@@ -357,8 +357,6 @@ public:
   }
   
   ~Impl() {
-    Stop();
-    
     if (display_) delete display_;
     
     // Delete any active framebuffers
@@ -366,22 +364,7 @@ public:
       delete canvas;
     }
   }
-  
-  void Start() {
-    if (running_) return;
-    running_ = true;
-    
-    matrix_thread_ = std::thread(&EmulatorMatrix::Impl::MatrixThread, this);
-  }
-  
-  void Stop() {
-    if (!running_) return;
-    running_ = false;
-    
-    if (matrix_thread_.joinable()) {
-      matrix_thread_.join();
-    }
-  }
+
   
   FrameCanvas* SwapOnVSync(FrameCanvas* other, unsigned frame_fraction) {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -461,9 +444,23 @@ public:
   
   bool LuminanceCorrect() const { return luminance_correct_; }
   
+  void Render() {
+    if(!display_ || !active_buffer_) return;
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (active_buffer_) {
+      rgb_matrix::internal::Framebuffer* fb = active_buffer_->framebuffer();
+      internal::EmulatorFramebuffer* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(fb);
+      emulator_fb->Render(display_);
+      display_->Render(brightness_);
+    }
+  }
 private:
   // Main thread function that updates the display
   void MatrixThread() {
+    if(true)
+      return;
+
     const int64_t frame_time_us = 1000000 / emulator_options_.refresh_rate_hz;
     
     auto next_frame_time = std::chrono::steady_clock::now();
@@ -585,9 +582,13 @@ bool EmulatorMatrix::luminance_correct() const {
   return impl_->LuminanceCorrect();
 }
 
+
 bool EmulatorMatrix::StartRefresh() {
-  impl_->Start();
   return true;
+}
+
+void EmulatorMatrix::Render() {
+  impl_->Render();
 }
 
 //TODO Use methods from options-initialize.cc to consume flags
