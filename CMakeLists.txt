@@ -31,7 +31,7 @@ else()
     message(STATUS "Building without emulator support")
 endif()
 
-add_library(rpi-rgb-led-matrix ${MATRIX_SOURCES})
+add_library(rpi-rgb-led-matrix SHARED ${MATRIX_SOURCES})
 
 if (BUILD_SHARED_LIBS AND MSVC)
     target_compile_definitions(rpi-rgb-led-matrix PRIVATE RPI_RGB_LED_MATRIX_EXPORTS)
