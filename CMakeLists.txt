@@ -1,12 +1,11 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.10)
+
 project(rpi-rgb-led-matrix VERSION 0.1.0)
 
-set(CMAKE_CXX_STANDARD 14)
+include(GNUInstallDirs)
 
-# Option to enable/disable emulator functionality
 option(ENABLE_EMULATOR "Enable LED matrix emulator functionality" OFF)
 
-# Define core library source files
 set(MATRIX_CORE_SOURCES
     lib/gpio.cc
     lib/led-matrix.cc
@@ -23,44 +22,65 @@ set(MATRIX_CORE_SOURCES
     lib/matrix-factory.cc
 )
 
-# Set up emulator if enabled
 set(MATRIX_SOURCES ${MATRIX_CORE_SOURCES})
 
 if(ENABLE_EMULATOR)
-    # Add emulator source
     list(APPEND MATRIX_SOURCES lib/emulator.cc)
-
     message(STATUS "Building with emulator support")
 else()
     message(STATUS "Building without emulator support")
 endif()
 
-add_library(${PROJECT_NAME} SHARED ${MATRIX_SOURCES})
+add_library(rpi-rgb-led-matrix ${MATRIX_SOURCES})
 
-# Main Target Compile
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_14)
-
-# Include directories
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-    # where the library itself will look for its internal headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib
-    PUBLIC
-    # where top-level project will look for the library's public headers
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    # where external projects will look for the library's public headers
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
+if (BUILD_SHARED_LIBS AND MSVC)
+    target_compile_definitions(rpi-rgb-led-matrix PRIVATE RPI_RGB_LED_MATRIX_EXPORTS)
+endif()
 
 # Export ENABLE_EMULATOR define to consumers of the library
 if(ENABLE_EMULATOR)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC ENABLE_EMULATOR)
-
-    # Find SDL2 for the emulator
+    target_compile_definitions(rpi-rgb-led-matrix PUBLIC ENABLE_EMULATOR)
     find_package(SDL2 CONFIG REQUIRED)
-    target_link_libraries(${PROJECT_NAME}
-        PRIVATE
+    target_link_libraries(rpi-rgb-led-matrix PRIVATE
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
     )
 endif()
+
+# Include directories
+# Public: for consumers; Build: for internal headers
+# Assume public headers are in include/ (adjust if needed)
+target_include_directories(rpi-rgb-led-matrix PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib
+)
+
+# Install the library and its headers
+install(TARGETS rpi-rgb-led-matrix
+        EXPORT rpi-rgb-led-matrix_targets
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+# Install all headers from include/ (adjust if needed)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# Generate and install *-targets.cmake 
+install(EXPORT rpi-rgb-led-matrix_targets
+        FILE rpi-rgb-led-matrix-targets.cmake
+        NAMESPACE rpi_rgb_led_matrix::
+        DESTINATION share/rpi-rgb-led-matrix)
+
+# Generate the config file in the current binary dir
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/rpi-rgb-led-matrix-config.cmake"
+"include(CMakeFindDependencyMacro)\n"
+"if(ENABLE_EMULATOR)\nfind_dependency(SDL2 CONFIG REQUIRED)\nendif()\n"
+"include(\"${CMAKE_CURRENT_LIST_DIR}/rpi-rgb-led-matrix-targets.cmake\")\n"
+)
+
+# Install the generated config file
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/rpi-rgb-led-matrix-config.cmake"
+        DESTINATION share/rpi-rgb-led-matrix)
