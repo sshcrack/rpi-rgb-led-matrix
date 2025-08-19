@@ -701,6 +701,86 @@ inline void Framebuffer::MapColors(
   }
 }
 
+// Inverse of DirectMapColor - convert from internal PWM bits representation back to 8-bit color
+static inline uint8_t InverseDirectMapColor(uint8_t brightness, uint16_t pwm_value) {
+  const int shift = internal::Framebuffer::kBitPlanes - 8;
+  uint16_t color_value;
+
+  if (shift > 0) {
+    // Shift back to 8-bit space
+    color_value = pwm_value >> shift;
+  } else if (shift < 0) {
+    // Shift back to 8-bit space in the other direction
+    color_value = pwm_value << -shift;
+  } else {
+    color_value = pwm_value;
+  }
+
+  // Inverse of the brightness scaling
+  if (brightness < 100 && brightness > 0) {
+    color_value = (color_value * 100) / brightness;
+    if (color_value > 255) color_value = 255;
+  }
+
+  return static_cast<uint8_t>(color_value);
+}
+
+// Inverse of CIEMapColor - find the closest 8-bit color value that would map to this PWM value
+static inline uint8_t InverseCIEMapColor(uint8_t brightness, uint16_t pwm_value) {
+  // Binary search to find the closest color that would map to this PWM value
+  const ColorLookup* lookup = ColorLookupManager::GetLookup(brightness);
+  
+  // Edge cases
+  if (pwm_value == 0) return 0;
+  if (pwm_value >= lookup->color[255]) return 255;
+
+  // Binary search to find the closest match
+  int low = 0, high = 255, mid;
+  while (low <= high) {
+    mid = (low + high) / 2;
+    if (lookup->color[mid] == pwm_value)
+      return mid;
+    
+    if (lookup->color[mid] < pwm_value)
+      low = mid + 1;
+    else
+      high = mid - 1;
+  }
+
+  // Find the closest match between the two values we're between
+  if (high < 0) return 0;
+  if (low > 255) return 255;
+  
+  // Determine which is closer
+  if ((pwm_value - lookup->color[high]) < (lookup->color[low] - pwm_value))
+    return high;
+  else
+    return low;
+}
+
+// Inverse of MapColors - converts from internal PWM bits back to 8-bit RGB values
+inline void Framebuffer::InverseMapColors(
+  uint16_t red, uint16_t green, uint16_t blue,
+  uint8_t *r, uint8_t *g, uint8_t *b) const {
+  
+  // First handle inverse_color if needed
+  if (inverse_color_) {
+    red = ~red;
+    green = ~green;
+    blue = ~blue;
+  }
+  
+  if (do_luminance_correct_) {
+    *r = InverseCIEMapColor(brightness_, red);
+    *g = InverseCIEMapColor(brightness_, green);
+    *b = InverseCIEMapColor(brightness_, blue);
+  } else {
+    *r = InverseDirectMapColor(brightness_, red);
+    *g = InverseDirectMapColor(brightness_, green);
+    *b = InverseDirectMapColor(brightness_, blue);
+  }
+}
+
 void Framebuffer::Fill(uint8_t r, uint8_t g, uint8_t b) {
   uint16_t red, green, blue;
   MapColors(r, g, b, &red, &green, &blue);
@@ -940,5 +1020,43 @@ void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {
     }
   }
 }
+
+bool Framebuffer::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const {
+  const PixelDesignator *designator = (*shared_mapper_)->get(x, y);
+  if (designator == NULL) return false;
+  const long pos = designator->gpio_word;
+  if (pos < 0) return false;  // non-used pixel marker.
+
+  // Start with zero colors
+  uint16_t red = 0, green = 0, blue = 0;
+
+  const int min_bit_plane = kBitPlanes - pwm_bits_;
+  const gpio_bits_t r_bits = designator->r_bit;
+  const gpio_bits_t g_bits = designator->g_bit;
+  const gpio_bits_t b_bits = designator->b_bit;
+
+  // Get the starting position of this pixel's data in the bitplane buffer
+  const gpio_bits_t *bits = bitplane_buffer_ + pos;
+  bits += (columns_ * min_bit_plane);  // Skip to min_bit_plane
+
+  // Process each bit plane exactly as SetPixel does
+  int bit_position = 0;
+  for (uint16_t mask = 1<<min_bit_plane; mask != 1<<kBitPlanes; mask <<= 1) {
+    // Extract color information from this bitplane
+    if (*bits & r_bits) red |= (1 << bit_position);
+    if (*bits & g_bits) green |= (1 << bit_position);
+    if (*bits & b_bits) blue |= (1 << bit_position);
+    
+    // Move to next bitplane, exactly matching how SetPixel stores data
+    bits += columns_;
+    bit_position++;
+  }
+  
+  // Use the inverse mapping function to get back the original color values
+  InverseMapColors(red, green, blue, r, g, b);
+  
+  return true;
+}
+
 }  // namespace internal
 }  // namespace rgb_matrix

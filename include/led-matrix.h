@@ -218,6 +218,7 @@ public:
   virtual int height() const;
   virtual void SetPixel(int x, int y,
                         uint8_t red, uint8_t green, uint8_t blue);
+  virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
   virtual void Clear();
   virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
 
@@ -253,7 +254,7 @@ public:
   // 28Hz animation, nicely locked to the refresh-rate).
   // If you combine this with Options::limit_refresh_rate_hz you can create
   // time-correct animations.
-  FrameCanvas *SwapOnVSync(FrameCanvas *other, unsigned framerate_fraction = 1);
+  [[nodiscard]] FrameCanvas *SwapOnVSync(FrameCanvas *other, unsigned framerate_fraction = 1);
 
   // -- Setting shape and behavior of matrix.
 
@@ -399,6 +400,7 @@ public:
   virtual int height() const;
   virtual void SetPixel(int x, int y,
                         uint8_t red, uint8_t green, uint8_t blue);
+  virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
   virtual void SetPixels(int x, int y, int width, int height,
                          Color *colors);
   virtual void Clear();

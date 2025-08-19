@@ -127,6 +127,7 @@ public:
   virtual int width() const;
   virtual int height() const;
   virtual void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
+  virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
   void SetPixels(int x, int y, int width, int height, Color *colors);
   virtual void Clear();
   virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
@@ -146,6 +147,8 @@ private:
                              PixelDesignator *designator);
   inline void  MapColors(uint8_t r, uint8_t g, uint8_t b,
                          uint16_t *red, uint16_t *green, uint16_t *blue);
+  inline void InverseMapColors(uint16_t red, uint16_t green, uint16_t blue,
+                              uint8_t *r, uint8_t *g, uint8_t *b) const;
   const int rows_;     // Number of rows. 16 or 32.
   const int parallel_; // Parallel rows of chains. 1 or 2.
   const int height_;   // rows * parallel

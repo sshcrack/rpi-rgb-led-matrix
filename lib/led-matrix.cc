@@ -772,6 +772,11 @@ void RGBMatrix::SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue)
   impl_->active_->SetPixel(x, y, red, green, blue);
 }
 
+bool RGBMatrix::GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const
+{
+  return impl_->active_->GetPixel(x, y, red, green, blue);
+}
+
 void RGBMatrix::Clear() {
   impl_->active_->Clear();
 }
@@ -820,5 +825,13 @@ bool FrameCanvas::Deserialize(const char *data, size_t len) {
 }
 void FrameCanvas::CopyFrom(const FrameCanvas &other) {
   frame_->CopyFrom(other.frame_);
+}
+
+// Implementation of RGBMatrix Canvas interface.
+bool FrameCanvas::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const {
+  if (x < 0 || x >= width() || y < 0 || y >= height()) {
+    return false;
+  }
+  return frame_->GetPixel(x, y, r, g, b);
 }
 }  // end namespace rgb_matrix

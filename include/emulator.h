@@ -58,6 +58,7 @@ public:
   virtual int width() const;
   virtual int height() const;
   virtual void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
+  virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
   virtual void Clear();
   virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
   
@@ -84,6 +85,7 @@ public:
   
   // Start the refresh thread
   bool StartRefresh();
+  void Render();
 
 private:
   class Impl;

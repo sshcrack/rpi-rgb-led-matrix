@@ -57,6 +57,10 @@ if(ENABLE_EMULATOR)
     target_compile_definitions(${PROJECT_NAME} PUBLIC ENABLE_EMULATOR)
 
     # Find SDL2 for the emulator
-    find_package(SDL2 REQUIRED)
-    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2)
+    find_package(SDL2 CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+        $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+        $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    )
 endif()
