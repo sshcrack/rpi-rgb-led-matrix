@@ -68,6 +68,10 @@ install(TARGETS rpi-rgb-led-matrix
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
+# Install fonts directory for use by dependents
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/fonts/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/rpi-rgb-led-matrix/fonts)
+
 # Generate and install *-targets.cmake 
 install(EXPORT rpi-rgb-led-matrix_targets
         FILE rpi-rgb-led-matrix-targets.cmake
@@ -77,11 +81,15 @@ install(EXPORT rpi-rgb-led-matrix_targets
 # Use CMakePackageConfigHelpers for proper config file generation
 include(CMakePackageConfigHelpers)
 
+# Set variables for the config file
+set(CMAKE_INSTALL_DATADIR_CONFIG ${CMAKE_INSTALL_DATADIR})
+
 # Create the config file template
 configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/rpi-rgb-led-matrix-config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/rpi-rgb-led-matrix-config.cmake"
     INSTALL_DESTINATION share/rpi-rgb-led-matrix
+    PATH_VARS CMAKE_INSTALL_DATADIR_CONFIG
 )
 
 # Install the generated config file

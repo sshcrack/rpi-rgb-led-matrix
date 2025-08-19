@@ -14,3 +14,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/rpi-rgb-led-matrix-targets.cmake")
 
 # Set the variables that consumers might expect
 set(rpi-rgb-led-matrix_FOUND TRUE)
+
+# Provide the path to the installed fonts directory
+set_and_check(RPI_RGB_LED_MATRIX_FONTS_DIR "@PACKAGE_CMAKE_INSTALL_DATADIR_CONFIG@/rpi-rgb-led-matrix/fonts")
