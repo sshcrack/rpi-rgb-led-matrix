@@ -74,11 +74,14 @@ install(EXPORT rpi-rgb-led-matrix_targets
         NAMESPACE rpi_rgb_led_matrix::
         DESTINATION share/rpi-rgb-led-matrix)
 
-# Generate the config file in the current binary dir
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/rpi-rgb-led-matrix-config.cmake"
-"include(CMakeFindDependencyMacro)\n"
-"if(ENABLE_EMULATOR)\nfind_dependency(SDL2 CONFIG REQUIRED)\nendif()\n"
-"include(\"${CMAKE_CURRENT_LIST_DIR}/rpi-rgb-led-matrix-targets.cmake\")\n"
+# Use CMakePackageConfigHelpers for proper config file generation
+include(CMakePackageConfigHelpers)
+
+# Create the config file template
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/rpi-rgb-led-matrix-config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/rpi-rgb-led-matrix-config.cmake"
+    INSTALL_DESTINATION share/rpi-rgb-led-matrix
 )
 
 # Install the generated config file

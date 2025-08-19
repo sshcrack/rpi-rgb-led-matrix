@@ -1,0 +1,16 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find dependencies if emulator support is enabled
+# The ENABLE_EMULATOR value is set during configuration
+set(_rpi_rgb_led_matrix_enable_emulator @ENABLE_EMULATOR@)
+if(_rpi_rgb_led_matrix_enable_emulator)
+    find_dependency(SDL2 CONFIG REQUIRED)
+endif()
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/rpi-rgb-led-matrix-targets.cmake")
+
+# Set the variables that consumers might expect
+set(rpi-rgb-led-matrix_FOUND TRUE)
