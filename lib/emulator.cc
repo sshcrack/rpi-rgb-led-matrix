@@ -27,16 +27,19 @@
 #include <mutex>
 #include <string.h>
 #include <string>
+#include <vector>
 #include <thread>
 #include <unistd.h>
 
 namespace rgb_matrix {
 
-EmulatorOptions::EmulatorOptions() 
-  : display_scale(10), 
-    window_title("RGB Matrix Emulator"), 
+EmulatorOptions::EmulatorOptions()
+  : display_scale(10),
+    window_title("RGB Matrix Emulator"),
     emulate_hardware_timing(false),
-    refresh_rate_hz(60) {
+    refresh_rate_hz(60),
+    frame_export_path(""),
+    headless(false) {
 }
 
 namespace {
@@ -65,9 +68,14 @@ static bool InitSDL() {
 // Class to handle SDL window and rendering
 class SDLDisplay {
 public:
-  SDLDisplay(int width, int height, int scale, const std::string& title)
-    : width_(width), height_(height), scale_(scale) {
-    
+  SDLDisplay(int width, int height, int scale, const std::string& title,
+             const std::string& frame_export_path = "", bool headless = false)
+    : width_(width), height_(height), scale_(scale),
+      frame_export_path_(frame_export_path) {
+
+    if (headless) {
+      SDL_setenv("SDL_VIDEODRIVER", "offscreen", 1);
+    }
     if (!InitSDL()) return;
     
     window_ = SDL_CreateWindow(
@@ -186,12 +194,35 @@ public:
     
     SDL_RenderCopy(renderer_, texture_, NULL, &dest_rect);
     SDL_RenderPresent(renderer_);
+
+    // Export frame to binary file for MCP server or other consumers.
+    // Format: [width: u32 LE][height: u32 LE][R,G,B bytes ... width*height*3]
+    if (!frame_export_path_.empty()) {
+      std::string tmp_path = frame_export_path_ + ".tmp";
+      FILE* f = fopen(tmp_path.c_str(), "wb");
+      if (f) {
+        uint32_t w = (uint32_t)width_, h = (uint32_t)height_;
+        fwrite(&w, sizeof(w), 1, f);
+        fwrite(&h, sizeof(h), 1, f);
+        const float bf = brightness / 100.0f;
+        std::vector<uint8_t> rgb(width_ * height_ * 3);
+        for (int i = 0; i < width_ * height_; ++i) {
+          rgb[i*3]   = (uint8_t)(pixels_[i].r * bf);
+          rgb[i*3+1] = (uint8_t)(pixels_[i].g * bf);
+          rgb[i*3+2] = (uint8_t)(pixels_[i].b * bf);
+        }
+        fwrite(rgb.data(), 1, rgb.size(), f);
+        fclose(f);
+        rename(tmp_path.c_str(), frame_export_path_.c_str());
+      }
+    }
   }
   
 private:
   int width_;
   int height_;
   int scale_;
+  std::string frame_export_path_;
   SDL_Window *window_ = nullptr;
   SDL_Renderer *renderer_ = nullptr;
   SDL_Texture *texture_ = nullptr;
@@ -347,9 +378,11 @@ public:
     // Initialize hardware mapping before creating framebuffer
     rgb_matrix::internal::Framebuffer::InitHardwareMapping(opts.hardware_mapping);
     
-    display_ = new SDLDisplay(width_, height_, 
+    display_ = new SDLDisplay(width_, height_,
                               emulator_opts.display_scale,
-                              emulator_opts.window_title);
+                              emulator_opts.window_title,
+                              emulator_opts.frame_export_path,
+                              emulator_opts.headless);
     
     // Create initial framebuffer and canvas
     rgb_matrix::internal::Framebuffer* fb = new internal::EmulatorFramebuffer(width_, height_);
@@ -617,6 +650,12 @@ bool ParseEmulatorOptionsFromFlags(int* argc, char*** argv,
     } else if (strcmp(option, "--led-emulator-hardware-timing") == 0) {
       options->emulate_hardware_timing = true;
       consumed = true;
+    } else if (strncmp(option, "--led-emulator-frame-export=", 28) == 0) {
+      options->frame_export_path = option + 28;
+      consumed = true;
+    } else if (strcmp(option, "--led-emulator-headless") == 0) {
+      options->headless = true;
+      consumed = true;
     }
     
     if (consumed && remove_consumed_flags) {
@@ -647,13 +686,16 @@ bool ParseEmulatorOptionsFromFlags(int* argc, char*** argv,
 // Print emulator-specific flags
 void PrintEmulatorFlags(FILE* out, const EmulatorOptions& defaults) {
   fprintf(out,
-          "\t--led-emulator-scale=<scale>    : Window scale factor (Default: %d)\n"
-          "\t--led-emulator-title=<title>    : Window title (Default: %s)\n"
-          "\t--led-emulator-refresh=<hz>     : Display refresh rate Hz (Default: %d)\n"
-          "\t--led-emulator-hardware-timing  : Emulate hardware timing (Default: %s)\n",
+          "\t--led-emulator-scale=<scale>         : Window scale factor (Default: %d)\n"
+          "\t--led-emulator-title=<title>         : Window title (Default: %s)\n"
+          "\t--led-emulator-refresh=<hz>          : Display refresh rate Hz (Default: %d)\n"
+          "\t--led-emulator-hardware-timing       : Emulate hardware timing (Default: %s)\n"
+          "\t--led-emulator-frame-export=<path>   : Write each frame as raw RGB binary to path (Default: none)\n"
+          "\t--led-emulator-headless              : Run without a visible window (Default: %s)\n",
           defaults.display_scale, defaults.window_title.c_str(),
           defaults.refresh_rate_hz,
-          defaults.emulate_hardware_timing ? "on" : "off");
+          defaults.emulate_hardware_timing ? "on" : "off",
+          defaults.headless ? "on" : "off");
 }
 
 }  // namespace rgb_matrix

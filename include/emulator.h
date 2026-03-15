@@ -41,6 +41,13 @@ struct EmulatorOptions {
   // Display refresh rate in Hz (default: 60)
   int refresh_rate_hz;
 
+  // Path to export each rendered frame as raw binary (width u32, height u32, RGB bytes).
+  // If empty, no frame export is performed. (default: "")
+  std::string frame_export_path;
+
+  // Run without a visible window using SDL offscreen renderer. (default: false)
+  bool headless;
+
 };
 
 // EmulatorMatrix is an implementation of RGBMatrix that shows the matrix content
