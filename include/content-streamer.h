@@ -122,6 +122,10 @@ public:
   // or end of stream reached..
   bool GetNext(FrameCanvas *frame, uint32_t* hold_time_us);
 
+  // Peek at the next frame without consuming it. Subsequent GetNext() calls
+  // will return the peeked frame first.
+  bool PeekNext(FrameCanvas *frame, uint32_t* hold_time_us);
+
 private:
   enum State {
     STREAM_AT_BEGIN,
@@ -135,6 +139,9 @@ private:
   State state_;
 
   char *header_frame_buffer_;
+  bool peeked_;
+  char *peeked_frame_buffer_;
+  uint32_t peeked_hold_time_;
 };
 }
 

@@ -178,15 +178,20 @@ void StreamWriter::WriteFileHeader(const FrameCanvas &frame, size_t len) {
 }
 
 StreamReader::StreamReader(StreamIO *io)
-  : io_(io), state_(STREAM_AT_BEGIN), header_frame_buffer_(NULL) {
+  : io_(io), state_(STREAM_AT_BEGIN), header_frame_buffer_(NULL),
+    peeked_(false), peeked_frame_buffer_(NULL), peeked_hold_time_(0) {
   io_->Rewind();
 }
-StreamReader::~StreamReader() { delete [] header_frame_buffer_; }
+StreamReader::~StreamReader() {
+  delete [] header_frame_buffer_;
+  delete [] peeked_frame_buffer_;
+}
 
 void StreamReader::Rewind() {
 #ifndef MOCK_RPI
   io_->Rewind();
   state_ = STREAM_AT_BEGIN;
+  peeked_ = false;
 #endif
 }
 
@@ -194,6 +199,14 @@ bool StreamReader::GetNext(FrameCanvas *frame, uint32_t* hold_time_us) {
 #ifdef MOCK_RPI
   return true;
 #endif
+  // If we have a peeked frame, return it and clear the peeked flag.
+  if (peeked_) {
+    peeked_ = false;
+    bool result = frame->Deserialize(peeked_frame_buffer_, frame_buf_size_);
+    if (hold_time_us) *hold_time_us = peeked_hold_time_;
+    return result;
+  }
+
   if (state_ == STREAM_AT_BEGIN && !ReadFileHeader(*frame)) return false;
   if (state_ != STREAM_READING) return false;
 
@@ -222,6 +235,48 @@ bool StreamReader::GetNext(FrameCanvas *frame, uint32_t* hold_time_us) {
   if (hold_time_us) *hold_time_us = h.hold_time_us;
   return frame->Deserialize(header_frame_buffer_ + sizeof(FrameHeader),
                             frame_buf_size_);
+}
+
+bool StreamReader::PeekNext(FrameCanvas *frame, uint32_t* hold_time_us) {
+#ifdef MOCK_RPI
+  return true;
+#endif
+  if (peeked_) {
+    // Already have a peeked frame, just deserialize and return it.
+    bool result = frame->Deserialize(peeked_frame_buffer_, frame_buf_size_);
+    if (hold_time_us) *hold_time_us = peeked_hold_time_;
+    return result;
+  }
+
+  if (state_ == STREAM_AT_BEGIN && !ReadFileHeader(*frame)) return false;
+  if (state_ != STREAM_READING) return false;
+
+  // Allocate peeked_frame_buffer_ if needed
+  if (!peeked_frame_buffer_)
+    peeked_frame_buffer_ = new char [ sizeof(FrameHeader) + frame_buf_size_ ];
+
+  // Read header and expected buffer size.
+  if (!FullRead(io_, peeked_frame_buffer_,
+                sizeof(FrameHeader) + frame_buf_size_)) {
+    return false;
+  }
+
+  const FrameHeader &h = *reinterpret_cast<FrameHeader*>(peeked_frame_buffer_);
+
+  if (h.magic != kFrameMagicValue) {
+    state_ = STREAM_ERROR;
+    return false;
+  }
+
+  if (h.size != frame_buf_size_)
+    return false;
+
+  peeked_ = true;
+  peeked_hold_time_ = h.hold_time_us;
+  bool result = frame->Deserialize(peeked_frame_buffer_ + sizeof(FrameHeader),
+                                   frame_buf_size_);
+  if (hold_time_us) *hold_time_us = h.hold_time_us;
+  return result;
 }
 
 bool StreamReader::ReadFileHeader(const FrameCanvas &frame) {
