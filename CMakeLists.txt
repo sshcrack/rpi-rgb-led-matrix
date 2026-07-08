@@ -57,6 +57,13 @@ target_include_directories(rpi-rgb-led-matrix PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
 )
 
+option(BUILD_TESTS "Build memory leak test programs" OFF)
+
+if(ENABLE_EMULATOR AND BUILD_TESTS)
+    add_executable(emulator-memleak-test examples/emulator-memleak-test.cc)
+    target_link_libraries(emulator-memleak-test PRIVATE rpi-rgb-led-matrix)
+endif()
+
 # Install the library and its headers
 install(TARGETS rpi-rgb-led-matrix
         EXPORT rpi-rgb-led-matrix_targets

@@ -233,12 +233,19 @@ private:
 
 // Create internal framebuffer implementation for the emulator to match the RGBMatrix design
 namespace internal {
+
+// Static shared mapper for emulator framebuffers. The base Framebuffer constructor
+// allocates a PixelDesignatorMap if *mapper is NULL. Using a static ensures the
+// pointer is properly initialized before the base constructor runs (avoiding UB
+// from passing an uninitialized member variable).
+static rgb_matrix::internal::PixelDesignatorMap* s_emulator_shared_mapper = nullptr;
+
 class EmulatorFramebuffer : public rgb_matrix::internal::Framebuffer {
 public:
   EmulatorFramebuffer(int width, int height)
-    : rgb_matrix::internal::Framebuffer(width, height, 1, 0, "RGB", false, &shared_pixel_mapper_),
+    : rgb_matrix::internal::Framebuffer(width, height, 1, 0, "RGB", false, &s_emulator_shared_mapper),
       width_(width), height_(height), brightness_(100), pwm_bits_(8),
-      do_luminance_correct_(false), shared_pixel_mapper_(NULL) {
+      do_luminance_correct_(false) {
       
     pixels_ = new EmulatedPixel[width_ * height_];
     Clear();
@@ -355,7 +362,6 @@ private:
   uint8_t pwm_bits_;
   bool do_luminance_correct_;
   EmulatedPixel* pixels_;
-  rgb_matrix::internal::PixelDesignatorMap* shared_pixel_mapper_;
   size_t buffer_size_;  // Added buffer size member to track serialized data size
 };
 } // namespace internal
@@ -384,9 +390,10 @@ public:
                               emulator_opts.frame_export_path,
                               emulator_opts.headless);
     
-    // Create initial framebuffer and canvas
+    // Create initial framebuffer and canvas, track for cleanup
     rgb_matrix::internal::Framebuffer* fb = new internal::EmulatorFramebuffer(width_, height_);
     active_buffer_ = new FrameCanvas(fb);
+    created_frames_.push_back(active_buffer_);
   }
   
   ~Impl() {
