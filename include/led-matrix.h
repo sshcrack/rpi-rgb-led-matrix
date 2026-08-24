@@ -27,9 +27,14 @@
 #include <vector>
 
 #include "canvas.h"
-#include "thread.h"
 #include "pixel-mapper.h"
 #include "graphics.h"
+
+#if defined(_MSC_VER)
+#define RGB_MATRIX_DEPRECATED __declspec(deprecated)
+#else
+#define RGB_MATRIX_DEPRECATED __attribute__((deprecated))
+#endif
 
 namespace rgb_matrix {
 class RGBMatrix;
@@ -336,7 +341,7 @@ public:
   // matrix->gpio()->RequestInputs(...)
   //
   // Don't use, use AwaitInputChange() directly.
-  RGBMatrix *gpio() __attribute__((deprecated)) { return this; }
+  RGB_MATRIX_DEPRECATED RGBMatrix *gpio() { return this; }
 
   //--  Rarely needed
   // Start the refresh thread.
@@ -352,7 +357,7 @@ private:
 };
 
 namespace internal {
-class Framebuffer;
+class FramebufferInterface;
 }
 
 class FrameCanvas : public Canvas {
@@ -410,13 +415,13 @@ private:
   friend class RGBMatrix;
   friend class EmulatorMatrix;  // Add EmulatorMatrix as a friend
 
-  FrameCanvas(internal::Framebuffer *frame) : frame_(frame){}
+  FrameCanvas(internal::FramebufferInterface *frame) : frame_(frame){}
   virtual ~FrameCanvas();   // Any FrameCanvas is owned by RGBMatrix.
 
-  internal::Framebuffer *const frame_;
+  internal::FramebufferInterface *const frame_;
 
   // Make framebuffer() accessible to EmulatorMatrix
-  internal::Framebuffer *framebuffer() { return frame_; }
+  internal::FramebufferInterface *framebuffer() { return frame_; }
 };
 
 // Runtime options to simplify doing common things for many programs such as

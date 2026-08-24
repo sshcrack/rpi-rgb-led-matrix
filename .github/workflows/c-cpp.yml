@@ -20,3 +20,15 @@ jobs:
       run: make -B -C bindings/python/rgbmatrix
     - name: make
       run: make
+
+  windows-emulator:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Configure native headless emulator
+      run: cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
+    - name: Build native headless emulator
+      run: cmake --build build --config Release
+    - name: Test native headless emulator
+      run: ctest --test-dir build -C Release --output-on-failure

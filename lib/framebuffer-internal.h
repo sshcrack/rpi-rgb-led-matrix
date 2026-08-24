@@ -19,6 +19,7 @@
 #include <stdlib.h>
 
 #include "hardware-mapping.h"
+#include "framebuffer-interface.h"
 #include "../include/graphics.h"
 
 namespace rgb_matrix {
@@ -64,7 +65,7 @@ private:
 // write itself to GPIO.
 // Our internal memory layout mimicks as much as possible what needs to be
 // written out.
-class Framebuffer {
+class Framebuffer : public FramebufferInterface {
 public:
   // Maximum usable bitplanes.
   //
@@ -88,7 +89,7 @@ public:
               int scan_mode,
               const char* led_sequence, bool inverse_color,
               PixelDesignatorMap **mapper);
-  virtual ~Framebuffer();
+  ~Framebuffer() override;
 
   // Initialize GPIO bits for output. Only call once.
   static void InitHardwareMapping(const char *named_hardware);
@@ -102,35 +103,34 @@ public:
   // Set PWM bits used for output. Default is 11, but if you only deal with
   // simple comic-colors, 1 might be sufficient. Lower require less CPU.
   // Returns boolean to signify if value was within range.
-  bool SetPWMBits(uint8_t value);
-  uint8_t pwmbits() { return pwm_bits_; }
+  bool SetPWMBits(uint8_t value) override;
+  uint8_t pwmbits() override { return pwm_bits_; }
 
   // Map brightness of output linearly to input with CIE1931 profile.
-  void set_luminance_correct(bool on) { do_luminance_correct_ = on; }
-  bool luminance_correct() const { return do_luminance_correct_; }
+  void set_luminance_correct(bool on) override { do_luminance_correct_ = on; }
+  bool luminance_correct() const override { return do_luminance_correct_; }
 
   // Set brightness in percent; range=1..100
   // This will only affect newly set pixels.
-  void SetBrightness(uint8_t b) {
+  void SetBrightness(uint8_t b) override {
     brightness_ = (b <= 100 ? (b != 0 ? b : 1) : 100);
   }
-  uint8_t brightness() { return brightness_; }
+  uint8_t brightness() override { return brightness_; }
 
   virtual void DumpToMatrix(GPIO *io, int pwm_bits_to_show);
 
-  virtual void Serialize(const char **data, size_t *len) const;
-  virtual bool Deserialize(const char *data, size_t len);
-  virtual void CopyFrom(const Framebuffer *other);
+  void Serialize(const char **data, size_t *len) const override;
+  bool Deserialize(const char *data, size_t len) override;
+  void CopyFrom(const FramebufferInterface *other) override;
 
   // Canvas-inspired methods, but we're not implementing this interface to not
   // have an unnecessary vtable.
-  virtual int width() const;
-  virtual int height() const;
-  virtual void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
-  virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
-  void SetPixels(int x, int y, int width, int height, Color *colors);
-  virtual void Clear();
-  virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
+  int width() const override;
+  int height() const override;
+  void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) override;
+  bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const override;
+  void Clear() override;
+  void Fill(uint8_t red, uint8_t green, uint8_t blue) override;
 
 private:
   static const struct HardwareMapping *hardware_mapping_;

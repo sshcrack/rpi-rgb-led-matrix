@@ -166,7 +166,7 @@ public:
     while (running()) {
       const uint32_t start_time_us = GetMicrosecondCounter();
 
-      current_frame_->framebuffer()
+      static_cast<internal::Framebuffer *>(current_frame_->framebuffer())
         ->DumpToMatrix(io_, start_bit_[low_bit_sequence % 4]);
 
       // SwapOnVSync() exchange.
@@ -411,7 +411,7 @@ RGBMatrix::Impl::~Impl() {
 
   // Make sure LEDs are off.
   active_->Clear();
-  if (io_) active_->framebuffer()->DumpToMatrix(io_, 0);
+  if (io_) static_cast<internal::Framebuffer *>(active_->framebuffer())->DumpToMatrix(io_, 0);
 
   for (size_t i = 0; i < created_frames_.size(); ++i) {
     delete created_frames_[i];
@@ -785,53 +785,4 @@ void RGBMatrix::Fill(uint8_t red, uint8_t green, uint8_t blue) {
   impl_->active_->Fill(red, green, blue);
 }
 
-// FrameCanvas implementation of Canvas
-FrameCanvas::~FrameCanvas() { delete frame_; }
-int FrameCanvas::width() const { return frame_->width(); }
-int FrameCanvas::height() const { return frame_->height(); }
-void FrameCanvas::SetPixel(int x, int y,
-                         uint8_t red, uint8_t green, uint8_t blue) {
-  frame_->SetPixel(x, y, red, green, blue);
-}
-void FrameCanvas::SetPixels(int x, int y, int width, int height,
-                         Color *colors) {
-  frame_->SetPixels(x, y, width, height, colors);
-}
-void FrameCanvas::Clear() { return frame_->Clear(); }
-void FrameCanvas::Fill(uint8_t red, uint8_t green, uint8_t blue) {
-  frame_->Fill(red, green, blue);
-}
-bool FrameCanvas::SetPWMBits(uint8_t value) { return frame_->SetPWMBits(value); }
-uint8_t FrameCanvas::pwmbits() { return frame_->pwmbits(); }
-
-// Map brightness of output linearly to input with CIE1931 profile.
-void FrameCanvas::set_luminance_correct(bool on) { frame_->set_luminance_correct(on); }
-bool FrameCanvas::luminance_correct() const { return frame_->luminance_correct(); }
-
-void FrameCanvas::SetBrightness(uint8_t brightness) { frame_->SetBrightness(brightness); }
-uint8_t FrameCanvas::brightness() { return frame_->brightness(); }
-
-void FrameCanvas::Serialize(const char **data, size_t *len) const {
-#ifndef MOCK_RPI
-  frame_->Serialize(data, len);
-#endif
-}
-bool FrameCanvas::Deserialize(const char *data, size_t len) {
-#ifndef MOCK_RPI
-  return frame_->Deserialize(data, len);
-#else
-    return true;
-#endif
-}
-void FrameCanvas::CopyFrom(const FrameCanvas &other) {
-  frame_->CopyFrom(other.frame_);
-}
-
-// Implementation of RGBMatrix Canvas interface.
-bool FrameCanvas::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const {
-  if (x < 0 || x >= width() || y < 0 || y >= height()) {
-    return false;
-  }
-  return frame_->GetPixel(x, y, r, g, b);
-}
 }  // end namespace rgb_matrix

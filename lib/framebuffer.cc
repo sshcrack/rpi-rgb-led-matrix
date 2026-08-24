@@ -831,14 +831,6 @@ void Framebuffer::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
   }
 }
 
-void Framebuffer::SetPixels(int x, int y, int width, int height, Color *colors) {
-  for (int iy = 0; iy < height; ++iy) {
-    for (int ix = 0; ix < width; ++ix) {
-      SetPixel(x + ix, y + iy, colors->r, colors->g, colors->b);
-      ++colors;
-    }
-  }
-}
 // Strange LED-mappings such as RBG or so are handled here.
 gpio_bits_t Framebuffer::GetGpioFromLedSequence(char col,
                                                 const char *led_sequence,
@@ -948,9 +940,11 @@ bool Framebuffer::Deserialize(const char *data, size_t len) {
   return true;
 }
 
-void Framebuffer::CopyFrom(const Framebuffer *other) {
+void Framebuffer::CopyFrom(const FramebufferInterface *other) {
   if (other == this) return;
-  memcpy(bitplane_buffer_, other->bitplane_buffer_, buffer_size_);
+  const auto *hardware = dynamic_cast<const Framebuffer *>(other);
+  if (!hardware || hardware->buffer_size_ != buffer_size_) return;
+  memcpy(bitplane_buffer_, hardware->bitplane_buffer_, buffer_size_);
 }
 
 void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {

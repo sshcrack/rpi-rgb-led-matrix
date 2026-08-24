@@ -5,7 +5,8 @@ include(CMakeFindDependencyMacro)
 # Find dependencies if emulator support is enabled
 # The ENABLE_EMULATOR value is set during configuration
 set(_rpi_rgb_led_matrix_enable_emulator @ENABLE_EMULATOR@)
-if(_rpi_rgb_led_matrix_enable_emulator)
+set(_rpi_rgb_led_matrix_needs_sdl @RPI_RGB_LED_MATRIX_NEEDS_SDL@)
+if(_rpi_rgb_led_matrix_needs_sdl)
     find_dependency(SDL2 CONFIG REQUIRED)
 endif()
 

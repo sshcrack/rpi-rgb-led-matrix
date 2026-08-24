@@ -47,6 +47,21 @@ Check out [utils/ directory for some ready-made tools](./utils) to get started
 using the library, or the [examples-api-use/](./examples-api-use) directory if
 you want to get started programming your own utils.
 
+### Native Windows headless emulator
+
+CMake supports a native Windows headless emulator for desktop render workers,
+previews, and tests. It provides `Canvas`, `FrameCanvas`, `EmulatorMatrix`,
+graphics/font, and content-streaming APIs without Raspberry Pi GPIO or SDL.
+Physical HUB75 output remains Raspberry-Pi-only.
+
+```powershell
+cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
+Linux `ENABLE_EMULATOR=ON` continues to use the SDL emulator.
+
 Panels supported
 ----------------
 This library does not support PWM panels (which actually are better, but need 

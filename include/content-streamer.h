@@ -17,7 +17,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#if defined(_WIN32) && !defined(__MINGW32__)
+#include <cstddef>
+using ssize_t = std::ptrdiff_t;
+#else
 #include <sys/types.h>
+#endif
 
 #include <string>
 
@@ -69,7 +74,7 @@ public:
 
 private:
   std::string buffer_;  // super simplistic.
-  size_t pos_;
+  size_t pos_ = 0;
 };
 
 // Just a view around the memory, possibly a memory mapped file.
@@ -103,7 +108,7 @@ public:
   bool Stream(const FrameCanvas &frame, uint32_t hold_time_us);
 
 private:
-  void WriteFileHeader(const FrameCanvas &frame, size_t len);
+  bool WriteFileHeader(const FrameCanvas &frame, size_t len);
 
   StreamIO *const io_;
   bool header_written_;

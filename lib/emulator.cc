@@ -324,7 +324,7 @@ public:
     return true;
   }
   
-  void CopyFrom(const Framebuffer *other) override {
+  void CopyFrom(const FramebufferInterface *other) override {
     const EmulatorFramebuffer* o = dynamic_cast<const EmulatorFramebuffer*>(other);
     if (!o) return;
     
@@ -489,8 +489,7 @@ public:
 
     std::unique_lock<std::mutex> lock(mutex_);
     if (active_buffer_) {
-      rgb_matrix::internal::Framebuffer* fb = active_buffer_->framebuffer();
-      internal::EmulatorFramebuffer* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(fb);
+      auto* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(active_buffer_->framebuffer());
       emulator_fb->Render(display_);
       display_->Render(brightness_);
     }
@@ -510,8 +509,7 @@ private:
       {
         std::unique_lock<std::mutex> lock(mutex_);
         if (active_buffer_) {
-          rgb_matrix::internal::Framebuffer* fb = active_buffer_->framebuffer();
-          internal::EmulatorFramebuffer* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(fb);
+          auto* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(active_buffer_->framebuffer());
           emulator_fb->Render(display_);
           display_->Render(brightness_);
         }

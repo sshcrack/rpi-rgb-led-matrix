@@ -3,10 +3,10 @@
 # So
 #   -lrgbmatrix
 ##
-OBJECTS=gpio.o led-matrix.o options-initialize.o framebuffer.o \
+OBJECTS=gpio.o led-matrix.o frame-canvas.o options-initialize.o framebuffer.o \
         thread.o bdf-font.o graphics.o led-matrix-c.o hardware-mapping.o \
         pixel-mapper.o multiplex-mappers.o \
-	content-streamer.o emulator.o matrix-factory.o
+	content-streamer.o matrix-factory.o
 
 TARGET=librgbmatrix
 
@@ -243,6 +243,7 @@ $(TARGET).so.1 : $(OBJECTS)
 	$(CXX) -shared -Wl,-soname,$@ -o $@ $^ -lpthread  -lrt -lm -lpthread
 
 led-matrix.o: led-matrix.cc $(INCDIR)/led-matrix.h
+frame-canvas.o: frame-canvas.cc framebuffer-interface.h $(INCDIR)/led-matrix.h
 thread.o : thread.cc $(INCDIR)/thread.h
 framebuffer.o: framebuffer.cc framebuffer-internal.h
 graphics.o: graphics.cc utf8-internal.h

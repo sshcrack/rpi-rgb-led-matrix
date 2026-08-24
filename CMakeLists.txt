@@ -6,7 +6,7 @@ include(GNUInstallDirs)
 
 option(ENABLE_EMULATOR "Enable LED matrix emulator functionality" OFF)
 
-set(MATRIX_CORE_SOURCES
+set(MATRIX_HARDWARE_SOURCES
     lib/gpio.cc
     lib/led-matrix.cc
     lib/framebuffer.cc
@@ -14,37 +14,52 @@ set(MATRIX_CORE_SOURCES
     lib/pixel-mapper.cc
     lib/multiplex-mappers.cc
     lib/hardware-mapping.c
-    lib/content-streamer.cc
-    lib/bdf-font.cc
-    lib/graphics.cc
     lib/options-initialize.cc
     lib/led-matrix-c.cc
     lib/matrix-factory.cc
 )
 
-set(MATRIX_SOURCES ${MATRIX_CORE_SOURCES})
+set(MATRIX_PORTABLE_SOURCES
+    lib/frame-canvas.cc
+    lib/content-streamer.cc
+    lib/bdf-font.cc
+    lib/graphics.cc
+)
 
-if(ENABLE_EMULATOR)
-    list(APPEND MATRIX_SOURCES lib/emulator.cc)
-    message(STATUS "Building with emulator support")
+if(WIN32)
+    if(NOT ENABLE_EMULATOR)
+        message(FATAL_ERROR "Native Windows builds support the emulator backend only; configure with -DENABLE_EMULATOR=ON")
+    endif()
+    set(MATRIX_SOURCES ${MATRIX_PORTABLE_SOURCES} lib/emulator-headless.cc)
+    message(STATUS "Building portable headless emulator support for Windows")
 else()
-    message(STATUS "Building without emulator support")
+    set(MATRIX_SOURCES ${MATRIX_HARDWARE_SOURCES} ${MATRIX_PORTABLE_SOURCES})
+    if(ENABLE_EMULATOR)
+        list(APPEND MATRIX_SOURCES lib/emulator.cc)
+        message(STATUS "Building with SDL emulator support")
+    else()
+        message(STATUS "Building without emulator support")
+    endif()
 endif()
 
 add_library(rpi-rgb-led-matrix SHARED ${MATRIX_SOURCES})
 
-if (BUILD_SHARED_LIBS AND MSVC)
+if(MSVC)
     target_compile_definitions(rpi-rgb-led-matrix PRIVATE RPI_RGB_LED_MATRIX_EXPORTS)
+    set_target_properties(rpi-rgb-led-matrix PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-# Export ENABLE_EMULATOR define to consumers of the library
+set(RPI_RGB_LED_MATRIX_NEEDS_SDL OFF)
 if(ENABLE_EMULATOR)
     target_compile_definitions(rpi-rgb-led-matrix PUBLIC ENABLE_EMULATOR)
-    find_package(SDL2 CONFIG REQUIRED)
-    target_link_libraries(rpi-rgb-led-matrix PRIVATE
-        $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-        $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-    )
+    if(NOT WIN32)
+        set(RPI_RGB_LED_MATRIX_NEEDS_SDL ON)
+        find_package(SDL2 CONFIG REQUIRED)
+        target_link_libraries(rpi-rgb-led-matrix PRIVATE
+            $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+        )
+    endif()
 endif()
 
 # Include directories
@@ -60,8 +75,14 @@ target_include_directories(rpi-rgb-led-matrix PUBLIC
 option(BUILD_TESTS "Build memory leak test programs" OFF)
 
 if(ENABLE_EMULATOR AND BUILD_TESTS)
-    add_executable(emulator-memleak-test examples/emulator-memleak-test.cc)
-    target_link_libraries(emulator-memleak-test PRIVATE rpi-rgb-led-matrix)
+    enable_testing()
+    add_executable(emulator-smoke-test examples/emulator-smoke-test.cc)
+    target_link_libraries(emulator-smoke-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME emulator-smoke-test COMMAND emulator-smoke-test)
+    if(NOT WIN32)
+        add_executable(emulator-memleak-test examples/emulator-memleak-test.cc)
+        target_link_libraries(emulator-memleak-test PRIVATE rpi-rgb-led-matrix)
+    endif()
 endif()
 
 # Install the library and its headers

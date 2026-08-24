@@ -8,11 +8,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <algorithm>
+#include <climits>
+#include <io.h>
+#else
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/mman.h>
-
-#include <algorithm>
+#endif
 
 #include "gpio-bits.h"
 
@@ -51,22 +55,42 @@ STATIC_ASSERT(file_header_size_changed, sizeof(FrameHeader) == 32);
 }
 
 FileStreamIO::FileStreamIO(int fd) : fd_(fd) {
+#ifndef _WIN32
   posix_fadvise(fd_, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
 }
-FileStreamIO::~FileStreamIO() { close(fd_); }
-
-void FileStreamIO::Rewind() { lseek(fd_, 0, SEEK_SET); }
-
+FileStreamIO::~FileStreamIO() {
+#ifdef _WIN32
+  _close(fd_);
+#else
+  close(fd_);
+#endif
+}
+void FileStreamIO::Rewind() {
+#ifdef _WIN32
+  _lseek(fd_, 0, SEEK_SET);
+#else
+  lseek(fd_, 0, SEEK_SET);
+#endif
+}
 ssize_t FileStreamIO::Read(void *buf, const size_t count) {
+#ifdef _WIN32
+  return static_cast<ssize_t>(_read(fd_, buf, static_cast<unsigned int>(std::min<size_t>(count, INT_MAX))));
+#else
   return read(fd_, buf, count);
+#endif
 }
-
 ssize_t FileStreamIO::Append(const void *buf, const size_t count) {
+#ifdef _WIN32
+  return static_cast<ssize_t>(_write(fd_, buf, static_cast<unsigned int>(std::min<size_t>(count, INT_MAX))));
+#else
   return write(fd_, buf, count);
+#endif
 }
 
 void MemStreamIO::Rewind() { pos_ = 0; }
 ssize_t MemStreamIO::Read(void *buf, size_t count) {
+  if (pos_ >= buffer_.size()) return 0;
   const size_t amount = std::min(count, buffer_.size() - pos_);
   memcpy(buf, buffer_.data() + pos_, amount);
   pos_ += amount;
@@ -86,95 +110,123 @@ MemStreamIO::~MemStreamIO() {
   Clear();
 }
 
-MemMapViewInput::MemMapViewInput(int fd) : buffer_(nullptr) {
+MemMapViewInput::MemMapViewInput(int fd) : buffer_(nullptr), end_(nullptr), pos_(nullptr) {
+#ifdef _WIN32
+  struct _stat64 s = {};
+  if (_fstat64(fd, &s) < 0 || s.st_size < 0) {
+    _close(fd);
+    perror("Couldn't get size");
+    return;
+  }
+  const size_t file_size = static_cast<size_t>(s.st_size);
+  buffer_ = new char[file_size ? file_size : 1];
+  end_ = buffer_ + file_size;
+  pos_ = buffer_;
+  _lseek(fd, 0, SEEK_SET);
+  size_t offset = 0;
+  while (offset < file_size) {
+    const int amount = _read(fd, buffer_ + offset,
+      static_cast<unsigned int>(std::min<size_t>(file_size - offset, INT_MAX)));
+    if (amount <= 0) {
+      delete[] buffer_;
+      buffer_ = end_ = pos_ = nullptr;
+      break;
+    }
+    offset += static_cast<size_t>(amount);
+  }
+  _close(fd);
+#else
   struct stat s;
   if (fstat(fd, &s) < 0) {
     close(fd);
     perror("Couldn't get size");
-    return;   // Can't return error state from constructor. Stay uninitialized.
+    return;
   }
-
   const size_t file_size = s.st_size;
   buffer_ = (char*)mmap(nullptr, file_size, PROT_READ, MAP_SHARED, fd, 0);
   close(fd);
   if (buffer_ == MAP_FAILED) {
-    perror("Can't mmmap()");
+    buffer_ = nullptr;
+    perror("Can't mmap()");
     return;
   }
   end_ = buffer_ + file_size;
+  pos_ = buffer_;
 #ifdef POSIX_MADV_WILLNEED
-  // Trigger read-ahead if possible.
   posix_madvise(buffer_, file_size, POSIX_MADV_WILLNEED);
+#endif
 #endif
 }
 
 void MemMapViewInput::Rewind() { pos_ = buffer_; }
 ssize_t MemMapViewInput::Read(void *buf, size_t count) {
-  if (pos_ + count >= end_) return -1;
+  if (!pos_ || !end_ || count > static_cast<size_t>(end_ - pos_)) return -1;
   memcpy(buf, pos_, count);
   pos_ += count;
-  return count;
+  return static_cast<ssize_t>(count);
 }
 
 MemMapViewInput::~MemMapViewInput() {
+#ifdef _WIN32
+  delete[] buffer_;
+#else
   if (buffer_) munmap(buffer_, end_ - buffer_);
+#endif
 }
 
 // Read exactly count bytes including retries. Returns success.
 static bool FullRead(StreamIO *io, void *buf, const size_t count) {
-  int remaining = count;
-  char *char_buffer = (char*)buf;
+  size_t remaining = count;
+  char *char_buffer = static_cast<char *>(buf);
   while (remaining > 0) {
-    int r = io->Read(char_buffer, remaining);
-    if (r < 0) return false;
-    if (r == 0) break;  // EOF.
-    char_buffer += r; remaining -= r;
+    const ssize_t r = io->Read(char_buffer, remaining);
+    if (r <= 0) return false;
+    char_buffer += r;
+    remaining -= static_cast<size_t>(r);
   }
-  return remaining == 0;
+  return true;
 }
 
-// Write exactly count bytes including retries. Returns success.
 static bool FullAppend(StreamIO *io, const void *buf, const size_t count) {
-  int remaining = count;
-  const char *char_buffer = (const char*) buf;
+  size_t remaining = count;
+  const char *char_buffer = static_cast<const char *>(buf);
   while (remaining > 0) {
-    int w = io->Append(char_buffer, remaining);
-    if (w < 0) return false;
-    char_buffer += w; remaining -= w;
+    const ssize_t w = io->Append(char_buffer, remaining);
+    if (w <= 0) return false;
+    char_buffer += w;
+    remaining -= static_cast<size_t>(w);
   }
-  return remaining == 0;
+  return true;
 }
 
 StreamWriter::StreamWriter(StreamIO *io) : io_(io), header_written_(false) {}
 bool StreamWriter::Stream(const FrameCanvas &frame, uint32_t hold_time_us) {
 #ifndef MOCK_RPI
-  const char *data;
-  size_t len;
+  const char *data = nullptr;
+  size_t len = 0;
   frame.Serialize(&data, &len);
-
-  if (!header_written_) {
-    WriteFileHeader(frame, len);
-  }
+  if (!data || len > UINT32_MAX) return false;
+  if (!header_written_ && !WriteFileHeader(frame, len)) return false;
   FrameHeader h = {};
   h.magic = kFrameMagicValue;
-  h.size = len;
+  h.size = static_cast<uint32_t>(len);
   h.hold_time_us = hold_time_us;
-  FullAppend(io_, &h, sizeof(h));
-  return FullAppend(io_, data, len) == (ssize_t)len;
+  return FullAppend(io_, &h, sizeof(h)) && FullAppend(io_, data, len);
 #else
   return true;
 #endif
 }
 
-void StreamWriter::WriteFileHeader(const FrameCanvas &frame, size_t len) {
+bool StreamWriter::WriteFileHeader(const FrameCanvas &frame, size_t len) {
+  if (len > UINT32_MAX) return false;
   FileHeader header = {};
   header.magic = kFileMagicValue;
-  header.width = frame.width();
-  header.height = frame.height();
-  header.buf_size = len;
+  header.width = static_cast<uint32_t>(frame.width());
+  header.height = static_cast<uint32_t>(frame.height());
+  header.buf_size = static_cast<uint32_t>(len);
   header.is_wide_gpio = (sizeof(gpio_bits_t) > 4);
-  FullAppend(io_, &header, sizeof(header));
-  header_written_ = true;
+  header_written_ = FullAppend(io_, &header, sizeof(header));
+  return header_written_;
 }
 
 StreamReader::StreamReader(StreamIO *io)
@@ -280,9 +332,8 @@ bool StreamReader::PeekNext(FrameCanvas *frame, uint32_t* hold_time_us) {
 }
 
 bool StreamReader::ReadFileHeader(const FrameCanvas &frame) {
-  FileHeader header;
-  FullRead(io_, &header, sizeof(header));
-  if (header.magic != kFileMagicValue) {
+  FileHeader header = {};
+  if (!FullRead(io_, &header, sizeof(header)) || header.magic != kFileMagicValue) {
     state_ = STREAM_ERROR;
     return false;
   }
