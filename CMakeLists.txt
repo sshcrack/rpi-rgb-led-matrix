@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rpi-rgb-led-matrix VERSION 0.1.0)
+project(rpi-rgb-led-matrix VERSION 0.1.8)
 
 include(GNUInstallDirs)
 
@@ -72,7 +72,15 @@ target_include_directories(rpi-rgb-led-matrix PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
 )
 
-option(BUILD_TESTS "Build memory leak test programs" OFF)
+option(BUILD_TESTS "Build test programs" OFF)
+
+if(BUILD_TESTS)
+    enable_testing()
+    add_executable(content-streamer-test examples/content-streamer-test.cc)
+    target_link_libraries(content-streamer-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME content-streamer-repeat-peek COMMAND content-streamer-test repeat-peek)
+    add_test(NAME content-streamer-consume-peek COMMAND content-streamer-test consume-peek)
+endif()
 
 if(ENABLE_EMULATOR AND BUILD_TESTS)
     enable_testing()

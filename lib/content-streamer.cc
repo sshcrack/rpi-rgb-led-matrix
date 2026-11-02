@@ -254,7 +254,8 @@ bool StreamReader::GetNext(FrameCanvas *frame, uint32_t* hold_time_us) {
   // If we have a peeked frame, return it and clear the peeked flag.
   if (peeked_) {
     peeked_ = false;
-    bool result = frame->Deserialize(peeked_frame_buffer_, frame_buf_size_);
+    bool result = frame->Deserialize(peeked_frame_buffer_ + sizeof(FrameHeader),
+                                     frame_buf_size_);
     if (hold_time_us) *hold_time_us = peeked_hold_time_;
     return result;
   }
@@ -295,7 +296,8 @@ bool StreamReader::PeekNext(FrameCanvas *frame, uint32_t* hold_time_us) {
 #endif
   if (peeked_) {
     // Already have a peeked frame, just deserialize and return it.
-    bool result = frame->Deserialize(peeked_frame_buffer_, frame_buf_size_);
+    bool result = frame->Deserialize(peeked_frame_buffer_ + sizeof(FrameHeader),
+                                     frame_buf_size_);
     if (hold_time_us) *hold_time_us = peeked_hold_time_;
     return result;
   }

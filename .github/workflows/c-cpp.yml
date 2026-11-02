@@ -3,6 +3,17 @@ name: C/C++ CI
 on: [ push, pull_request ]
 
 jobs:
+  content-streamer:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Configure hardware framebuffer tests without GPIO
+      run: cmake -S . -B build -DENABLE_EMULATOR=OFF -DBUILD_TESTS=ON
+    - name: Build
+      run: cmake --build build --parallel 2
+    - name: Test content streamer
+      run: ctest --test-dir build --output-on-failure
+
   build:
     strategy:
       matrix:
