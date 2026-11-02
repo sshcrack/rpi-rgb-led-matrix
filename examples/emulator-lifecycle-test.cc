@@ -78,6 +78,10 @@ int main(int argc, char **argv) {
   if (!Check(!EmulatorMatrix::Create(invalid, emulator_options), "invalid options must be rejected")) return 1;
   invalid = options; invalid.cols = INT_MAX; invalid.chain_length = 2;
   if (!Check(!EmulatorMatrix::Create(invalid, emulator_options), "overflowing geometry must be rejected")) return 1;
+  RGBMatrix::Options virtual_options = options; virtual_options.rows = 128; virtual_options.cols = 128;
+  std::unique_ptr<EmulatorMatrix> virtual_matrix(EmulatorMatrix::Create(virtual_options, emulator_options));
+  if (!Check(virtual_matrix && virtual_matrix->width() == 128 && virtual_matrix->height() == 128,
+             "virtual canvases may exceed physical panel row limits")) return 1;
   matrix->Render();
   return 0;
 }

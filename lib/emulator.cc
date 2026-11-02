@@ -583,10 +583,16 @@ EmulatorMatrix::~EmulatorMatrix() {
 EmulatorMatrix* EmulatorMatrix::Create(const RGBMatrix::Options& options,
                                        const EmulatorOptions& emulator_options) {
   std::string error;
-  if (!options.Validate(&error)) return nullptr;
+  // Emulators also back virtual canvases (preview_gen/scene workers), whose
+  // dimensions need not be legal physical panel rows/columns/chains.
+  auto validation = options;
+  validation.rows = validation.cols = 32;
+  validation.chain_length = validation.parallel = 1;
+  if (options.rows <= 0 || options.cols <= 0 || options.chain_length <= 0 || options.parallel <= 0
+      || !validation.Validate(&error)) return nullptr;
   const int64_t width = static_cast<int64_t>(options.cols) * options.chain_length;
   const int64_t height = static_cast<int64_t>(options.rows) * options.parallel;
-  if (width > INT_MAX || width * height > INT_MAX / 3) return nullptr;
+  if (width > INT_MAX || height > INT_MAX || width * height > INT_MAX / 3) return nullptr;
 
   Impl* impl = new Impl(options, emulator_options);
   if (!impl->IsReady()) {
