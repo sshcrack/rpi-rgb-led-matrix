@@ -4,6 +4,8 @@
 #include "led-matrix.h"
 
 #include <cstddef>
+#include <cerrno>
+#include <utility>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -74,18 +76,26 @@ void FileStreamIO::Rewind() {
 #endif
 }
 ssize_t FileStreamIO::Read(void *buf, const size_t count) {
+  ssize_t result;
+  do {
 #ifdef _WIN32
-  return static_cast<ssize_t>(_read(fd_, buf, static_cast<unsigned int>(std::min<size_t>(count, INT_MAX))));
+    result = static_cast<ssize_t>(_read(fd_, buf, static_cast<unsigned int>(std::min<size_t>(count, INT_MAX))));
 #else
-  return read(fd_, buf, count);
+    result = read(fd_, buf, count);
 #endif
+  } while (result < 0 && errno == EINTR);
+  return result;
 }
 ssize_t FileStreamIO::Append(const void *buf, const size_t count) {
+  ssize_t result;
+  do {
 #ifdef _WIN32
-  return static_cast<ssize_t>(_write(fd_, buf, static_cast<unsigned int>(std::min<size_t>(count, INT_MAX))));
+    result = static_cast<ssize_t>(_write(fd_, buf, static_cast<unsigned int>(std::min<size_t>(count, INT_MAX))));
 #else
-  return write(fd_, buf, count);
+    result = write(fd_, buf, count);
 #endif
+  } while (result < 0 && errno == EINTR);
+  return result;
 }
 
 void MemStreamIO::Rewind() { pos_ = 0; }
@@ -230,31 +240,47 @@ bool StreamWriter::WriteFileHeader(const FrameCanvas &frame, size_t len) {
 }
 
 StreamReader::StreamReader(StreamIO *io)
-  : io_(io), state_(STREAM_AT_BEGIN), header_frame_buffer_(NULL),
+  : io_(io), frame_buf_size_(0), state_(STREAM_AT_BEGIN), header_frame_buffer_(NULL),
     peeked_(false), peeked_frame_buffer_(NULL), peeked_hold_time_(0) {
-  io_->Rewind();
+  if (io_) io_->Rewind();
 }
-StreamReader::~StreamReader() {
-  delete [] header_frame_buffer_;
-  delete [] peeked_frame_buffer_;
+StreamReader::~StreamReader() = default;
+
+StreamReader::StreamReader(StreamReader &&other) noexcept
+  : io_(nullptr), frame_buf_size_(0), state_(STREAM_ERROR), peeked_(false),
+    peeked_hold_time_(0) {
+  *this = std::move(other);
+}
+
+StreamReader &StreamReader::operator=(StreamReader &&other) noexcept {
+  if (this == &other) return *this;
+  io_ = std::exchange(other.io_, nullptr);
+  frame_buf_size_ = std::exchange(other.frame_buf_size_, 0);
+  state_ = std::exchange(other.state_, STREAM_ERROR);
+  header_frame_buffer_ = std::move(other.header_frame_buffer_);
+  peeked_ = std::exchange(other.peeked_, false);
+  peeked_frame_buffer_ = std::move(other.peeked_frame_buffer_);
+  peeked_hold_time_ = std::exchange(other.peeked_hold_time_, 0);
+  return *this;
 }
 
 void StreamReader::Rewind() {
 #ifndef MOCK_RPI
-  io_->Rewind();
-  state_ = STREAM_AT_BEGIN;
+  if (io_) io_->Rewind();
+  state_ = io_ ? STREAM_AT_BEGIN : STREAM_ERROR;
   peeked_ = false;
 #endif
 }
 
 bool StreamReader::GetNext(FrameCanvas *frame, uint32_t* hold_time_us) {
+  if (!io_ || !frame) return false;
 #ifdef MOCK_RPI
   return true;
 #endif
   // If we have a peeked frame, return it and clear the peeked flag.
   if (peeked_) {
     peeked_ = false;
-    bool result = frame->Deserialize(peeked_frame_buffer_ + sizeof(FrameHeader),
+    bool result = frame->Deserialize(peeked_frame_buffer_.get() + sizeof(FrameHeader),
                                      frame_buf_size_);
     if (hold_time_us) *hold_time_us = peeked_hold_time_;
     return result;
@@ -263,13 +289,15 @@ bool StreamReader::GetNext(FrameCanvas *frame, uint32_t* hold_time_us) {
   if (state_ == STREAM_AT_BEGIN && !ReadFileHeader(*frame)) return false;
   if (state_ != STREAM_READING) return false;
 
+  if (!header_frame_buffer_)
+    header_frame_buffer_.reset(new char[sizeof(FrameHeader) + frame_buf_size_]);
   // Read header and expected buffer size.
-  if (!FullRead(io_, header_frame_buffer_,
+  if (!FullRead(io_, header_frame_buffer_.get(),
                 sizeof(FrameHeader) + frame_buf_size_)) {
     return false;
   }
 
-  const FrameHeader &h = *reinterpret_cast<FrameHeader*>(header_frame_buffer_);
+  const FrameHeader &h = *reinterpret_cast<FrameHeader*>(header_frame_buffer_.get());
 
   // TODO: we might allow for this to be a kFileMagicValue, to allow people
   // to just concatenate streams. In that case, we just would need to read
@@ -286,17 +314,18 @@ bool StreamReader::GetNext(FrameCanvas *frame, uint32_t* hold_time_us) {
     return false;
 
   if (hold_time_us) *hold_time_us = h.hold_time_us;
-  return frame->Deserialize(header_frame_buffer_ + sizeof(FrameHeader),
+  return frame->Deserialize(header_frame_buffer_.get() + sizeof(FrameHeader),
                             frame_buf_size_);
 }
 
 bool StreamReader::PeekNext(FrameCanvas *frame, uint32_t* hold_time_us) {
+  if (!io_ || !frame) return false;
 #ifdef MOCK_RPI
   return true;
 #endif
   if (peeked_) {
     // Already have a peeked frame, just deserialize and return it.
-    bool result = frame->Deserialize(peeked_frame_buffer_ + sizeof(FrameHeader),
+    bool result = frame->Deserialize(peeked_frame_buffer_.get() + sizeof(FrameHeader),
                                      frame_buf_size_);
     if (hold_time_us) *hold_time_us = peeked_hold_time_;
     return result;
@@ -307,15 +336,15 @@ bool StreamReader::PeekNext(FrameCanvas *frame, uint32_t* hold_time_us) {
 
   // Allocate peeked_frame_buffer_ if needed
   if (!peeked_frame_buffer_)
-    peeked_frame_buffer_ = new char [ sizeof(FrameHeader) + frame_buf_size_ ];
+    peeked_frame_buffer_.reset(new char [ sizeof(FrameHeader) + frame_buf_size_ ]);
 
   // Read header and expected buffer size.
-  if (!FullRead(io_, peeked_frame_buffer_,
+  if (!FullRead(io_, peeked_frame_buffer_.get(),
                 sizeof(FrameHeader) + frame_buf_size_)) {
     return false;
   }
 
-  const FrameHeader &h = *reinterpret_cast<FrameHeader*>(peeked_frame_buffer_);
+  const FrameHeader &h = *reinterpret_cast<FrameHeader*>(peeked_frame_buffer_.get());
 
   if (h.magic != kFrameMagicValue) {
     state_ = STREAM_ERROR;
@@ -327,7 +356,7 @@ bool StreamReader::PeekNext(FrameCanvas *frame, uint32_t* hold_time_us) {
 
   peeked_ = true;
   peeked_hold_time_ = h.hold_time_us;
-  bool result = frame->Deserialize(peeked_frame_buffer_ + sizeof(FrameHeader),
+  bool result = frame->Deserialize(peeked_frame_buffer_.get() + sizeof(FrameHeader),
                                    frame_buf_size_);
   if (hold_time_us) *hold_time_us = h.hold_time_us;
   return result;
@@ -356,10 +385,19 @@ bool StreamReader::ReadFileHeader(const FrameCanvas &frame) {
     state_ = STREAM_ERROR;
     return false;
   }
+  const char *data = nullptr;
+  size_t expected_size = 0;
+  frame.Serialize(&data, &expected_size);
+  if (header.buf_size != expected_size || expected_size > SIZE_MAX - sizeof(FrameHeader)) {
+    state_ = STREAM_ERROR;
+    return false;
+  }
   state_ = STREAM_READING;
+  if (frame_buf_size_ != header.buf_size) {
+    header_frame_buffer_.reset();
+    peeked_frame_buffer_.reset();
+  }
   frame_buf_size_ = header.buf_size;
-  if (!header_frame_buffer_)
-    header_frame_buffer_ = new char [ sizeof(FrameHeader) + header.buf_size ];
   return true;
 }
 }  // namespace rgb_matrix

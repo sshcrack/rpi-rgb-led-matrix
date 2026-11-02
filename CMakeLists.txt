@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rpi-rgb-led-matrix VERSION 0.1.8)
+project(rpi-rgb-led-matrix VERSION 0.1.9)
 
 include(GNUInstallDirs)
 
@@ -43,6 +43,7 @@ else()
 endif()
 
 add_library(rpi-rgb-led-matrix SHARED ${MATRIX_SOURCES})
+target_compile_features(rpi-rgb-led-matrix PUBLIC cxx_std_17)
 
 if(MSVC)
     target_compile_definitions(rpi-rgb-led-matrix PRIVATE RPI_RGB_LED_MATRIX_EXPORTS)
@@ -76,6 +77,12 @@ option(BUILD_TESTS "Build test programs" OFF)
 
 if(BUILD_TESTS)
     enable_testing()
+    add_executable(framebuffer-regression-test examples/framebuffer-regression-test.cc)
+    target_link_libraries(framebuffer-regression-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME framebuffer-regression-test COMMAND framebuffer-regression-test)
+    add_executable(stream-io-test examples/stream-io-test.cc)
+    target_link_libraries(stream-io-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME stream-io-test COMMAND stream-io-test)
     add_executable(content-streamer-test examples/content-streamer-test.cc)
     target_link_libraries(content-streamer-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME content-streamer-repeat-peek COMMAND content-streamer-test repeat-peek)
@@ -84,6 +91,13 @@ endif()
 
 if(ENABLE_EMULATOR AND BUILD_TESTS)
     enable_testing()
+    add_executable(emulator-lifecycle-test examples/emulator-lifecycle-test.cc)
+    target_link_libraries(emulator-lifecycle-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME emulator-lifecycle-test COMMAND emulator-lifecycle-test)
+    if(NOT WIN32)
+        add_test(NAME emulator-display-failure COMMAND emulator-lifecycle-test display-failure)
+        set_tests_properties(emulator-display-failure PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+    endif()
     add_executable(emulator-smoke-test examples/emulator-smoke-test.cc)
     target_link_libraries(emulator-smoke-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME emulator-smoke-test COMMAND emulator-smoke-test)

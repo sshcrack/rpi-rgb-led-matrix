@@ -25,6 +25,7 @@ using ssize_t = std::ptrdiff_t;
 #endif
 
 #include <string>
+#include <memory>
 
 namespace rgb_matrix {
 class FrameCanvas;
@@ -50,8 +51,11 @@ public:
 
 class FileStreamIO : public StreamIO {
 public:
+  // Takes ownership of fd, including closing it on destruction.
   explicit FileStreamIO(int fd);
   ~FileStreamIO();
+  FileStreamIO(const FileStreamIO &) = delete;
+  FileStreamIO &operator=(const FileStreamIO &) = delete;
 
   void Rewind() final;
   ssize_t Read(void *buf, size_t count) final;
@@ -80,8 +84,11 @@ private:
 // Just a view around the memory, possibly a memory mapped file.
 class MemMapViewInput : public StreamIO {
 public:
+  // Takes ownership of fd and closes it even if initialization fails.
   MemMapViewInput(int fd);
   ~MemMapViewInput();
+  MemMapViewInput(const MemMapViewInput &) = delete;
+  MemMapViewInput &operator=(const MemMapViewInput &) = delete;
 
   // Since mmmap() might fail, this tells us if it was successful.
   bool IsInitialized() const { return buffer_ != nullptr; }
@@ -119,6 +126,10 @@ public:
   // Does not take ownership of StreamIO
   StreamReader(StreamIO *io);
   ~StreamReader();
+  StreamReader(const StreamReader &) = delete;
+  StreamReader &operator=(const StreamReader &) = delete;
+  StreamReader(StreamReader &&other) noexcept;
+  StreamReader &operator=(StreamReader &&other) noexcept;
 
   // Go back to the beginning.
   void Rewind();
@@ -143,9 +154,9 @@ private:
   size_t frame_buf_size_;
   State state_;
 
-  char *header_frame_buffer_;
+  std::unique_ptr<char[]> header_frame_buffer_;
   bool peeked_;
-  char *peeked_frame_buffer_;
+  std::unique_ptr<char[]> peeked_frame_buffer_;
   uint32_t peeked_hold_time_;
 };
 }
