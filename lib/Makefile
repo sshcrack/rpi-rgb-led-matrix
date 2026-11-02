@@ -173,7 +173,7 @@ DEFINES+=$(USER_DEFINES)
 DEFINES+=-DDEFAULT_HARDWARE='"$(HARDWARE_DESC)"'
 INCDIR=../include
 CFLAGS=-W -Wall -Wextra -Wno-unused-parameter -O3 -g -fPIC $(DEFINES) -march=native
-CXXFLAGS=$(CFLAGS) -fno-exceptions -std=c++11
+CXXFLAGS=$(CFLAGS) -fno-exceptions -std=c++17
 
 # Creating a lib for crosscompilation. Other option is to compile directly but
 # that makes the build process for all the different binaries more convoluted.

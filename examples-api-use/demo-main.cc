@@ -6,6 +6,7 @@
 //
 // This is a grab-bag of various demos and not very readable.
 #include "led-matrix.h"
+#include "thread.h"
 
 #include "pixel-mapper.h"
 #include "graphics.h"
@@ -21,6 +22,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <ctime>
 
 using std::min;
 using std::max;

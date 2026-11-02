@@ -5,6 +5,7 @@
 #include "framebuffer-interface.h"
 
 #include <algorithm>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -196,6 +197,9 @@ EmulatorMatrix *EmulatorMatrix::Create(const RGBMatrix::Options &options,
                                        const EmulatorOptions &emulator_options) {
   std::string error;
   if (!options.Validate(&error)) return nullptr;
+  const int64_t width = static_cast<int64_t>(options.cols) * options.chain_length;
+  const int64_t height = static_cast<int64_t>(options.rows) * options.parallel;
+  if (width > INT_MAX || width * height > INT_MAX / 3) return nullptr;
   auto *matrix = new EmulatorMatrix(new Impl(options, emulator_options));
   matrix->CreateFrameCanvas();
   return matrix;

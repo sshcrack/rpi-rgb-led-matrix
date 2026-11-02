@@ -765,9 +765,11 @@ inline void Framebuffer::InverseMapColors(
   
   // First handle inverse_color if needed
   if (inverse_color_) {
-    red = ~red;
-    green = ~green;
-    blue = ~blue;
+    const uint16_t mask = ((1U << kBitPlanes) - 1) &
+                          ~((1U << (kBitPlanes - pwm_bits_)) - 1);
+    red = ~red & mask;
+    green = ~green & mask;
+    blue = ~blue & mask;
   }
   
   if (do_luminance_correct_) {
@@ -1034,16 +1036,14 @@ bool Framebuffer::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) con
   bits += (columns_ * min_bit_plane);  // Skip to min_bit_plane
 
   // Process each bit plane exactly as SetPixel does
-  int bit_position = 0;
   for (uint16_t mask = 1<<min_bit_plane; mask != 1<<kBitPlanes; mask <<= 1) {
     // Extract color information from this bitplane
-    if (*bits & r_bits) red |= (1 << bit_position);
-    if (*bits & g_bits) green |= (1 << bit_position);
-    if (*bits & b_bits) blue |= (1 << bit_position);
+    if (*bits & r_bits) red |= mask;
+    if (*bits & g_bits) green |= mask;
+    if (*bits & b_bits) blue |= mask;
     
     // Move to next bitplane, exactly matching how SetPixel stores data
     bits += columns_;
-    bit_position++;
   }
   
   // Use the inverse mapping function to get back the original color values

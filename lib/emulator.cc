@@ -19,6 +19,7 @@
 #include <SDL2/SDL.h>
 #include <assert.h>
 #include <algorithm>
+#include <climits>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -116,9 +117,13 @@ public:
     if (renderer_) SDL_DestroyRenderer(renderer_);
     if (window_) SDL_DestroyWindow(window_);
   }
+
+  bool IsReady() const {
+    return window_ && renderer_ && texture_ && pixels_;
+  }
   
   void SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
-    if (x < 0 || x >= width_ || y < 0 || y >= height_) return;
+    if (!pixels_ || x < 0 || x >= width_ || y < 0 || y >= height_) return;
     
     const int pos = y * width_ + x;
     pixels_[pos].r = r;
@@ -139,6 +144,7 @@ public:
   }
   
   void Render(uint8_t brightness) {
+    if (!IsReady()) return;
     // Handle SDL events
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -157,9 +163,16 @@ public:
     }
     
     // Copy pixels to texture with brightness adjustment
-    uint8_t *tex_pixels;
-    int pitch;
-    SDL_LockTexture(texture_, NULL, (void**)&tex_pixels, &pitch);
+    uint8_t *tex_pixels = nullptr;
+    int pitch = 0;
+    if (SDL_LockTexture(texture_, NULL, (void**)&tex_pixels, &pitch) != 0) {
+      fprintf(stderr, "Unable to lock texture: %s\n", SDL_GetError());
+      return;
+    }
+    if (!tex_pixels || pitch < width_ * 3) {
+      SDL_UnlockTexture(texture_);
+      return;
+    }
     
     const float brightness_factor = brightness / 100.0f;
     
@@ -282,30 +295,29 @@ public:
   int width() const override { return width_; }
   int height() const override { return height_; }
   
-  // Remove the override keyword from methods that don't match exactly
-  bool SetPWMBits(uint8_t bits) {
+  bool SetPWMBits(uint8_t bits) override {
     if (bits < 1 || bits > 11) return false;
     pwm_bits_ = bits;
     return true;
   }
   
-  uint8_t pwmbits() const {
+  uint8_t pwmbits() override {
     return pwm_bits_;
   }
   
-  void set_luminance_correct(bool correct) {
+  void set_luminance_correct(bool correct) override {
     do_luminance_correct_ = correct;
   }
   
-  bool luminance_correct() const {
+  bool luminance_correct() const override {
     return do_luminance_correct_;
   }
   
-  void SetBrightness(uint8_t brightness) {
+  void SetBrightness(uint8_t brightness) override {
     brightness_ = brightness > 100 ? 100 : brightness;
   }
   
-  uint8_t brightness() const {
+  uint8_t brightness() override {
     return brightness_;
   }
   
@@ -326,7 +338,7 @@ public:
   
   void CopyFrom(const FramebufferInterface *other) override {
     const EmulatorFramebuffer* o = dynamic_cast<const EmulatorFramebuffer*>(other);
-    if (!o) return;
+    if (!o || o == this || o->width_ != width_ || o->height_ != height_) return;
     
     memcpy(pixels_, o->pixels_, width_ * height_ * sizeof(EmulatedPixel));
   }
@@ -372,7 +384,7 @@ public:
     : matrix_options_(opts),
       emulator_options_(emulator_opts),
       display_(nullptr),
-      brightness_(100),
+      brightness_(opts.brightness),
       pwm_bits_(opts.pwm_bits),
       luminance_correct_(false),
       running_(false),
@@ -389,12 +401,19 @@ public:
                               emulator_opts.window_title,
                               emulator_opts.frame_export_path,
                               emulator_opts.headless);
+
+    if (!display_->IsReady()) return;
     
     // Create initial framebuffer and canvas, track for cleanup
     rgb_matrix::internal::Framebuffer* fb = new internal::EmulatorFramebuffer(width_, height_);
     active_buffer_ = new FrameCanvas(fb);
+    active_buffer_->SetBrightness(brightness_);
+    active_buffer_->SetPWMBits(pwm_bits_);
+    active_buffer_->set_luminance_correct(luminance_correct_);
     created_frames_.push_back(active_buffer_);
   }
+
+  bool IsReady() const { return display_ && display_->IsReady() && active_buffer_; }
   
   ~Impl() {
     if (display_) delete display_;
@@ -409,7 +428,7 @@ public:
   FrameCanvas* SwapOnVSync(FrameCanvas* other, unsigned frame_fraction) {
     std::unique_lock<std::mutex> lock(mutex_);
     FrameCanvas* previous = active_buffer_;
-    active_buffer_ = other;
+    if (other) active_buffer_ = other;
     return previous;
   }
   
@@ -463,7 +482,7 @@ public:
   // Settings
   void SetBrightness(uint8_t brightness) {
     brightness_ = brightness > 100 ? 100 : brightness;
-    if (active_buffer_) active_buffer_->SetBrightness(brightness_);
+    for (auto *canvas : created_frames_) canvas->SetBrightness(brightness_);
   }
   
   uint8_t GetBrightness() const { return brightness_; }
@@ -563,7 +582,17 @@ EmulatorMatrix::~EmulatorMatrix() {
 // Factory method to create a new emulator
 EmulatorMatrix* EmulatorMatrix::Create(const RGBMatrix::Options& options,
                                        const EmulatorOptions& emulator_options) {
+  std::string error;
+  if (!options.Validate(&error)) return nullptr;
+  const int64_t width = static_cast<int64_t>(options.cols) * options.chain_length;
+  const int64_t height = static_cast<int64_t>(options.rows) * options.parallel;
+  if (width > INT_MAX || width * height > INT_MAX / 3) return nullptr;
+
   Impl* impl = new Impl(options, emulator_options);
+  if (!impl->IsReady()) {
+    delete impl;
+    return nullptr;
+  }
   return new EmulatorMatrix(impl);
 }
 
@@ -635,7 +664,7 @@ void EmulatorMatrix::Render() {
 bool ParseEmulatorOptionsFromFlags(int* argc, char*** argv,
                                   EmulatorOptions* options,
                                   bool remove_consumed_flags) {
-  if (!options) return false;
+  if (!argc || !argv || !*argv || !options) return false;
   
   for (int i = 1; i < *argc; ++i) {
     if (!(*argv)[i]) continue;  // Skip already consumed flags
@@ -679,7 +708,7 @@ bool ParseEmulatorOptionsFromFlags(int* argc, char*** argv,
     
     // Set the remaining positions to nullptr
     for (int i = new_argc; i < *argc; ++i) {
-      (*argv)[new_argc++] = nullptr;
+      (*argv)[i] = nullptr;
     }
     
     *argc = new_argc;
