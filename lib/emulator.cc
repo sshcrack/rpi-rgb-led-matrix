@@ -72,11 +72,10 @@ public:
   SDLDisplay(int width, int height, int scale, const std::string& title,
              const std::string& frame_export_path = "", bool headless = false)
     : width_(width), height_(height), scale_(scale),
-      frame_export_path_(frame_export_path) {
+      frame_export_path_(frame_export_path), headless_(headless) {
 
-    if (headless) {
-      SDL_setenv("SDL_VIDEODRIVER", "offscreen", 1);
-    }
+    pixels_ = new EmulatedPixel[width * height]();
+    if (headless_) return;
     if (!InitSDL()) return;
     
     window_ = SDL_CreateWindow(
@@ -107,8 +106,6 @@ public:
       return;
     }
     
-    pixels_ = new EmulatedPixel[width * height];
-    memset(pixels_, 0, width * height * sizeof(EmulatedPixel));
   }
   
   ~SDLDisplay() {
@@ -119,7 +116,7 @@ public:
   }
 
   bool IsReady() const {
-    return window_ && renderer_ && texture_ && pixels_;
+    return pixels_ && (headless_ || (window_ && renderer_ && texture_));
   }
   
   void SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
@@ -144,6 +141,12 @@ public:
   }
   
   void Render(uint8_t brightness) {
+    if (!IsReady()) return;
+    if (!headless_) RenderWindow(brightness);
+    ExportFrame(brightness);
+  }
+
+  void RenderWindow(uint8_t brightness) {
     if (!IsReady()) return;
     // Handle SDL events
     SDL_Event event;
@@ -208,6 +211,9 @@ public:
     SDL_RenderCopy(renderer_, texture_, NULL, &dest_rect);
     SDL_RenderPresent(renderer_);
 
+  }
+
+  void ExportFrame(uint8_t brightness) {
     // Export frame to binary file for MCP server or other consumers.
     // Format: [width: u32 LE][height: u32 LE][R,G,B bytes ... width*height*3]
     if (!frame_export_path_.empty()) {
@@ -236,6 +242,7 @@ private:
   int height_;
   int scale_;
   std::string frame_export_path_;
+  bool headless_;
   SDL_Window *window_ = nullptr;
   SDL_Renderer *renderer_ = nullptr;
   SDL_Texture *texture_ = nullptr;

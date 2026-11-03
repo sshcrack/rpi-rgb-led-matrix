@@ -4,6 +4,14 @@
 #include <climits>
 #include <cstring>
 #include <memory>
+#include <cstdlib>
+#include <fstream>
+#include <vector>
+#include <cstdint>
+#include <chrono>
+#ifndef _WIN32
+#include <SDL.h>
+#endif
 
 using namespace rgb_matrix;
 
@@ -26,6 +34,11 @@ int main(int argc, char **argv) {
     return Check(!matrix, "failed SDL display initialization must return null") ? 0 : 1;
   }
 
+#ifndef _WIN32
+  // Headless creation must not initialize any SDL video driver, even an
+  // unavailable one. It must also leave the caller's environment unchanged.
+  SDL_setenv("SDL_VIDEODRIVER", "matrix-intentionally-unavailable", 1);
+#endif
   char name[] = "test";
   char headless[] = "--led-emulator-headless";
   char keep[] = "keep";
@@ -82,6 +95,27 @@ int main(int argc, char **argv) {
   std::unique_ptr<EmulatorMatrix> virtual_matrix(EmulatorMatrix::Create(virtual_options, emulator_options));
   if (!Check(virtual_matrix && virtual_matrix->width() == 128 && virtual_matrix->height() == 128,
              "virtual canvases may exceed physical panel row limits")) return 1;
+  // A headless renderer must still publish MCP frames with brightness applied.
+  EmulatorOptions export_options = emulator_options;
+  export_options.frame_export_path = "headless-frame-" + std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count()) + ".rgb";
+  {
+    std::unique_ptr<EmulatorMatrix> exported(EmulatorMatrix::Create(options, export_options));
+    if (!Check(bool(exported), "create exporting headless emulator")) return 1;
+    exported->Fill(100, 200, 40);
+    exported->Render();
+    std::ifstream file(export_options.frame_export_path, std::ios::binary);
+    std::vector<unsigned char> frame((std::istreambuf_iterator<char>(file)), {});
+    std::remove(export_options.frame_export_path.c_str());
+    if (!Check(frame.size() == 8 + 32 * 32 * 3, "export complete frame") ||
+        !Check(frame[0] == 32 && frame[4] == 32 && frame[8] == 25 &&
+               frame[9] == 50 && frame[10] == 10, "export geometry and brightness")) return 1;
+  }
   matrix->Render();
+#ifndef _WIN32
+  if (!Check(SDL_WasInit(SDL_INIT_VIDEO) == 0, "headless mode must not initialize video") ||
+      !Check(std::strcmp(std::getenv("SDL_VIDEODRIVER"), "matrix-intentionally-unavailable") == 0,
+             "headless mode must not mutate SDL driver configuration")) return 1;
+#endif
   return 0;
 }

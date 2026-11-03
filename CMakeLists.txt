@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rpi-rgb-led-matrix VERSION 0.1.10)
+project(rpi-rgb-led-matrix VERSION 0.1.11)
 
 include(GNUInstallDirs)
 
@@ -93,6 +93,10 @@ if(ENABLE_EMULATOR AND BUILD_TESTS)
     enable_testing()
     add_executable(emulator-lifecycle-test examples/emulator-lifecycle-test.cc)
     target_link_libraries(emulator-lifecycle-test PRIVATE rpi-rgb-led-matrix)
+    if(NOT WIN32)
+        target_link_libraries(emulator-lifecycle-test PRIVATE
+            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
+    endif()
     add_test(NAME emulator-lifecycle-test COMMAND emulator-lifecycle-test)
     if(NOT WIN32)
         add_test(NAME emulator-display-failure COMMAND emulator-lifecycle-test display-failure)
