@@ -18,8 +18,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #if defined(_WIN32) && !defined(__MINGW32__)
-#include <cstddef>
-using ssize_t = std::ptrdiff_t;
+typedef long long ssize_t;
 #else
 #include <sys/types.h>
 #endif

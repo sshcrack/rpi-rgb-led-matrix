@@ -60,6 +60,27 @@ PixelDesignatorMap::~PixelDesignatorMap() {
   delete [] buffer_;
 }
 
+// Mappers are immutable after RGBMatrix publishes them. Each replacement owns
+// its cache, including when an allocator reuses an earlier mapper's address.
+const std::vector<PixelDesignatorMap::BulkGroup> &PixelDesignatorMap::bulk_groups() const {
+  std::call_once(bulk_once_, [this] {
+    for (int i = 0; i < width_ * height_; ++i)
+      if (buffer_[i].gpio_word >= 0) bulk_order_.push_back(i);
+    std::stable_sort(bulk_order_.begin(), bulk_order_.end(), [this](int a, int b) {
+      return buffer_[a].gpio_word < buffer_[b].gpio_word;
+    });
+    for (size_t i = 0; i < bulk_order_.size();) {
+      const size_t begin = i;
+      const long word = buffer_[bulk_order_[i]].gpio_word;
+      gpio_bits_t mask = ~gpio_bits_t(0);
+      do { mask &= buffer_[bulk_order_[i++]].mask; }
+      while (i < bulk_order_.size() && buffer_[bulk_order_[i]].gpio_word == word);
+      bulk_groups_.push_back({word, begin, i, mask});
+    }
+  });
+  return bulk_groups_;
+}
+
 // Different panel types use different techniques to set the row address.
 // We abstract that away with different implementations of RowAddressSetter
 class RowAddressSetter {
@@ -758,6 +779,21 @@ static inline uint8_t InverseCIEMapColor(uint8_t brightness, uint16_t pwm_value)
     return low;
 }
 
+// Built only on readback demand, shared immutably by canvases. Concurrent
+// readers retain GetPixel's read-only behavior. Ordinary rendering does not
+// initialize these tables or inspect any pixels.
+static const uint8_t *InverseLookup(uint8_t brightness, bool cie) {
+  struct Table { std::once_flag once; uint8_t colors[1 << Framebuffer::kBitPlanes]; };
+  static Table tables[2][100];
+  Table &table = tables[cie ? 1 : 0][brightness - 1];
+  std::call_once(table.once, [&table, brightness, cie] {
+    for (int i = 0; i < (1 << Framebuffer::kBitPlanes); ++i)
+      table.colors[i] = cie ? InverseCIEMapColor(brightness, i)
+                            : InverseDirectMapColor(brightness, i);
+  });
+  return table.colors;
+}
+
 // Inverse of MapColors - converts from internal PWM bits back to 8-bit RGB values
 inline void Framebuffer::InverseMapColors(
   uint16_t red, uint16_t green, uint16_t blue,
@@ -772,15 +808,10 @@ inline void Framebuffer::InverseMapColors(
     blue = ~blue & mask;
   }
   
-  if (do_luminance_correct_) {
-    *r = InverseCIEMapColor(brightness_, red);
-    *g = InverseCIEMapColor(brightness_, green);
-    *b = InverseCIEMapColor(brightness_, blue);
-  } else {
-    *r = InverseDirectMapColor(brightness_, red);
-    *g = InverseDirectMapColor(brightness_, green);
-    *b = InverseDirectMapColor(brightness_, blue);
-  }
+  const uint8_t *lookup = InverseLookup(brightness_, do_luminance_correct_);
+  *r = lookup[red];
+  *g = lookup[green];
+  *b = lookup[blue];
 }
 
 void Framebuffer::Fill(uint8_t r, uint8_t g, uint8_t b) {
@@ -830,6 +861,53 @@ void Framebuffer::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if (blue & mask)  color_bits |= b_bits;
     *bits = (*bits & designator_mask) | color_bits;
     bits += columns_;
+  }
+}
+
+void Framebuffer::SetPixels(int x, int y, int w, int h, Color *colors) {
+  // Reading an object's representation through unsigned bytes is permitted;
+  // never cast an incoming byte buffer to Color objects.
+  static_assert(sizeof(Color) == 3 && offsetof(Color, r) == 0 &&
+                offsetof(Color, g) == 1 && offsetof(Color, b) == 2, "RGB888 Color layout");
+  SetRGB(x, y, w, h, reinterpret_cast<const uint8_t *>(colors));
+}
+
+void Framebuffer::SetRGB(int x, int y, int w, int h, const uint8_t *rgb) {
+  if (!rgb) return;
+  if (x != 0 || y != 0 || w != width() || h != height()) {
+    FramebufferInterface::SetRGB(x, y, w, h, rgb);
+    return;
+  }
+  if (bulk_brightness_ != brightness_ || bulk_luminance_ != do_luminance_correct_) {
+    for (int i = 0; i < 256; ++i) {
+      uint16_t g, b;
+      MapColors(i, i, i, &bulk_colors_[i], &g, &b);
+    }
+    bulk_brightness_ = brightness_;
+    bulk_luminance_ = do_luminance_correct_;
+  }
+  const auto *map = *shared_mapper_;
+  const auto &groups = map->bulk_groups();
+  const auto &order = map->bulk_order();
+  const int first = kBitPlanes - pwm_bits_;
+  for (const auto &group : groups) {
+    gpio_bits_t planes[kBitPlanes] = {};
+    for (size_t i = group.begin; i < group.end; ++i) {
+      const int index = order[i];
+      const auto &d = map->at_index(index);
+      const uint8_t *p = rgb + size_t(index) * 3;
+      const uint16_t red = bulk_colors_[p[0]], green = bulk_colors_[p[1]], blue = bulk_colors_[p[2]];
+      for (int bit = first; bit < kBitPlanes; ++bit) {
+        const gpio_bits_t colors = ((gpio_bits_t(0) - ((red >> bit) & 1)) & d.r_bit)
+                                | ((gpio_bits_t(0) - ((green >> bit) & 1)) & d.g_bit)
+                                | ((gpio_bits_t(0) - ((blue >> bit) & 1)) & d.b_bit);
+        // Preserve row-major last-writer semantics for aliased mappings too.
+        planes[bit] = (planes[bit] & d.mask) | colors;
+      }
+    }
+    gpio_bits_t *out = bitplane_buffer_ + group.word + columns_ * first;
+    for (int bit = first; bit < kBitPlanes; ++bit, out += columns_)
+      *out = (*out & group.mask) | planes[bit];
   }
 }
 

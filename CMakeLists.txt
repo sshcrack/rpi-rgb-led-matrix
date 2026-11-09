@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rpi-rgb-led-matrix VERSION 0.1.11)
+project(rpi-rgb-led-matrix VERSION 0.1.12)
 
 include(GNUInstallDirs)
 
@@ -80,6 +80,11 @@ if(BUILD_TESTS)
     add_executable(framebuffer-regression-test examples/framebuffer-regression-test.cc)
     target_link_libraries(framebuffer-regression-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME framebuffer-regression-test COMMAND framebuffer-regression-test)
+    if(NOT WIN32)
+        add_executable(bulk-framebuffer-test examples/bulk-framebuffer-test.cc)
+        target_link_libraries(bulk-framebuffer-test PRIVATE rpi-rgb-led-matrix)
+        add_test(NAME bulk-framebuffer-test COMMAND bulk-framebuffer-test)
+    endif()
     add_executable(stream-io-test examples/stream-io-test.cc)
     target_link_libraries(stream-io-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME stream-io-test COMMAND stream-io-test)

@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <vector>
+#include <mutex>
 
 #include "hardware-mapping.h"
 #include "framebuffer-interface.h"
@@ -51,10 +53,18 @@ public:
   inline int width() const { return width_; }
   inline int height() const { return height_; }
 
+  struct BulkGroup { long word; size_t begin, end; gpio_bits_t mask; };
+  const std::vector<BulkGroup> &bulk_groups() const;
+  const std::vector<int> &bulk_order() const { return bulk_order_; }
+  const PixelDesignator &at_index(int index) const { return buffer_[index]; }
+
   // All bits that set red/green/blue pixels; used for Fill().
   const PixelDesignator &GetFillColorBits() { return fill_bits_; }
 
 private:
+  mutable std::once_flag bulk_once_;
+  mutable std::vector<int> bulk_order_;
+  mutable std::vector<BulkGroup> bulk_groups_;
   const int width_;
   const int height_;
   const PixelDesignator fill_bits_;  // Precalculated for fill.
@@ -128,6 +138,8 @@ public:
   int width() const override;
   int height() const override;
   void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) override;
+  void SetRGB(int x, int y, int width, int height, const uint8_t *rgb) override;
+  void SetPixels(int x, int y, int width, int height, Color *colors) override;
   bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const override;
   void Clear() override;
   void Fill(uint8_t red, uint8_t green, uint8_t blue) override;
@@ -172,6 +184,10 @@ private:
   // but it allows easy access in the critical section.
   gpio_bits_t *bitplane_buffer_;
   inline gpio_bits_t *ValueAt(int double_row, int column, int bit);
+
+  uint16_t bulk_colors_[256]{};
+  uint8_t bulk_brightness_ = 0;
+  bool bulk_luminance_ = false;
 
   PixelDesignatorMap **shared_mapper_;  // Storage in RGBMatrix.
 };

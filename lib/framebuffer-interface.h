@@ -31,7 +31,16 @@ public:
   virtual bool Deserialize(const char *data, size_t len) = 0;
   virtual void CopyFrom(const FramebufferInterface *other) = 0;
 
-  void SetPixels(int x, int y, int width, int height, Color *colors) {
+  virtual void SetRGB(int x, int y, int width, int height, const uint8_t *rgb) {
+    if (!rgb) return;
+    for (int row = 0; row < height; ++row)
+      for (int col = 0; col < width; ++col) {
+        const uint8_t *p = rgb + (size_t(row) * width + col) * 3;
+        SetPixel(x + col, y + row, p[0], p[1], p[2]);
+      }
+  }
+
+  virtual void SetPixels(int x, int y, int width, int height, Color *colors) {
     if (!colors) return;
     for (int row = 0; row < height; ++row) {
       for (int col = 0; col < width; ++col) {
