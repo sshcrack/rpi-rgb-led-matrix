@@ -406,6 +406,8 @@ public:
   virtual void SetPixel(int x, int y,
                         uint8_t red, uint8_t green, uint8_t blue);
   virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
+  // Packed, row-major RGB888. Like SetPixels, clipped rectangles are supported.
+  void SetRGB(int x, int y, int width, int height, const uint8_t *rgb);
   virtual void SetPixels(int x, int y, int width, int height,
                          Color *colors);
   virtual void Clear();

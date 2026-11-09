@@ -276,6 +276,12 @@ public:
     delete[] pixels_;
   }
   
+  void SetRGB(int x, int y, int w, int h, const uint8_t *rgb) override {
+    FramebufferInterface::SetRGB(x, y, w, h, rgb);
+  }
+  void SetPixels(int x, int y, int w, int h, Color *colors) override {
+    FramebufferInterface::SetPixels(x, y, w, h, colors);
+  }
   void SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) override {
     if (x < 0 || x >= width_ || y < 0 || y >= height_) return;
     

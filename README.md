@@ -25,6 +25,26 @@ Yes, you are also allowed to use
 this code under the [GNU General Public License Version 3.0](http://www.gnu.org/licenses/gpl-3.0.txt) 
 which allows linking with Apache 2.0 code and LGPL-3.0 code.
 
+## Bulk RGB frame writes
+
+`FrameCanvas::SetRGB(x, y, width, height, rgb)` accepts packed, row-major RGB888
+bytes (`width * height * 3` bytes). Full-canvas writes use a grouped GPIO bitplane
+converter; partial or clipped rectangles retain the scalar clipping behavior.
+`SetPixels()` uses the same fast path for `Color` arrays. Source data is consumed
+synchronously and can be reused after the call returns. Both emulator backends
+preserve their software framebuffer behavior.
+
+The conversion retains brightness, CIE1931 correction, RGB ordering, inverse
+colors, PWM depth, pixel mappers and aliased-pixel ordering. Hardware `GetPixel()`
+readback lazily builds an exact inverse-color lookup on demand; ordinary writes
+do not build the readback tables or read pixels.
+
+With `BUILD_TESTS=ON`, `bulk-framebuffer-test` compares serialized bitplanes with
+scalar writes across panel layouts, mappings, brightness and color settings. Run
+`./build/bulk-framebuffer-test --benchmark` for isolated full-frame write/readback
+timings without opening GPIO. This measures conversion cost, not panel refresh
+rate or whole-application FPS.
+
 ## Discourse discussion group
 
 **If you'd like help, please do not file a bug, use the discussion board instead:**

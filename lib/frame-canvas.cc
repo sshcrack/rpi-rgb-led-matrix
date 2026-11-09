@@ -24,4 +24,8 @@ bool FrameCanvas::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) con
   return frame_->GetPixel(x, y, r, g, b);
 }
 
+void FrameCanvas::SetRGB(int x, int y, int width, int height, const uint8_t *rgb) {
+  frame_->SetRGB(x, y, width, height, rgb);
+}
+
 }  // namespace rgb_matrix
