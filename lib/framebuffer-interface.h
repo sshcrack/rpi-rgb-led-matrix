@@ -40,6 +40,16 @@ public:
       }
   }
 
+  virtual void SubFill(int x, int y, int width, int height,
+                       uint8_t red, uint8_t green, uint8_t blue) {
+    const int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
+    const int x1 = x + width > this->width() ? this->width() : x + width;
+    const int y1 = y + height > this->height() ? this->height() : y + height;
+    for (int row = y0; row < y1; ++row)
+      for (int col = x0; col < x1; ++col)
+        SetPixel(col, row, red, green, blue);
+  }
+
   virtual void SetPixels(int x, int y, int width, int height, Color *colors) {
     if (!colors) return;
     for (int row = 0; row < height; ++row) {

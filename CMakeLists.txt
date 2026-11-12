@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rpi-rgb-led-matrix VERSION 0.1.12)
+project(rpi-rgb-led-matrix VERSION 0.1.13 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
@@ -17,6 +17,12 @@ set(MATRIX_HARDWARE_SOURCES
     lib/options-initialize.cc
     lib/led-matrix-c.cc
     lib/matrix-factory.cc
+    lib/content-streamer-c.cc
+    lib/frame-sequence.cc
+    lib/frame-sequence-c.cc
+    lib/rp1/rp1_pio_backend.cc
+    lib/rp1/rp1_pio_support.c
+    lib/rp1/rp1_rio_backend.cc
 )
 
 set(MATRIX_PORTABLE_SOURCES
@@ -71,6 +77,8 @@ target_include_directories(rpi-rgb-led-matrix PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/rp1/rp1_pio_vendor/piolib/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/rp1/rp1_pio_vendor/include
 )
 
 option(BUILD_TESTS "Build test programs" OFF)
