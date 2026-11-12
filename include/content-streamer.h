@@ -158,6 +158,7 @@ private:
   std::unique_ptr<char[]> peeked_frame_buffer_;
   uint32_t peeked_hold_time_;
 };
-}
-
+// Helpers for external C bridge wrappers.
+bool StreamIOIsCompatibleWithCanvas(StreamIO* io, FrameCanvas* frame);
+}  // namespace rgb_matrix
 #endif

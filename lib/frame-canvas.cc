@@ -10,6 +10,9 @@ void FrameCanvas::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) { fram
 void FrameCanvas::SetPixels(int x, int y, int width, int height, Color *colors) { frame_->SetPixels(x, y, width, height, colors); }
 void FrameCanvas::Clear() { frame_->Clear(); }
 void FrameCanvas::Fill(uint8_t r, uint8_t g, uint8_t b) { frame_->Fill(r, g, b); }
+void FrameCanvas::SubFill(int x, int y, int width, int height, uint8_t r, uint8_t g, uint8_t b) {
+  frame_->SubFill(x, y, width, height, r, g, b);
+}
 bool FrameCanvas::SetPWMBits(uint8_t value) { return frame_->SetPWMBits(value); }
 uint8_t FrameCanvas::pwmbits() { return frame_->pwmbits(); }
 void FrameCanvas::set_luminance_correct(bool on) { frame_->set_luminance_correct(on); }

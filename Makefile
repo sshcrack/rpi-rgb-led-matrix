@@ -9,7 +9,8 @@ RGB_LIBRARY=$(RGB_LIBDIR)/lib$(RGB_LIBRARY_NAME).a
 ENABLE_EMULATOR?=0
 
 # Some language bindings.
-PYTHON_LIB_DIR=bindings/python
+# Python is now handled by scikit-build-core and cmake, not here.
+# PYTHON_LIB_DIR=bindings/python
 CSHARP_LIB_DIR=bindings/c\#
 
 all : $(RGB_LIBRARY)
@@ -27,17 +28,17 @@ clean:
 	$(MAKE) -C utils clean
 	$(MAKE) -C examples-api-use clean
 	$(MAKE) -C examples clean
-	$(MAKE) -C $(PYTHON_LIB_DIR) clean
+	# $(MAKE) -C $(PYTHON_LIB_DIR) clean
+
+install:
+	$(MAKE) -C $(RGB_LIBDIR) install
+
+uninstall:
+	$(MAKE) -C $(RGB_LIBDIR) uninstall
 
 build-csharp:
 	$(MAKE) -C $(CSHARP_LIB_DIR) nuget
 	$(MAKE) -C $(CSHARP_LIB_DIR) build
 
-build-python: $(RGB_LIBRARY)
-	$(MAKE) -C $(PYTHON_LIB_DIR) build
-
-install-python: build-python
-	$(MAKE) -C $(PYTHON_LIB_DIR) install
-
 FORCE:
-.PHONY: FORCE
+.PHONY: FORCE install uninstall

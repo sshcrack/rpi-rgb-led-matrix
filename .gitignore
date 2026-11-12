@@ -1,7 +1,13 @@
+# c++
 *.o
 *.a
 *~
 *.so
+
+# env
 .envrc
 .direnv
 build
+
+# python
+__pycache__/

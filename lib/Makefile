@@ -3,10 +3,13 @@
 # So
 #   -lrgbmatrix
 ##
+include ../config.mk
+
 OBJECTS=gpio.o led-matrix.o frame-canvas.o options-initialize.o framebuffer.o \
-        thread.o bdf-font.o graphics.o led-matrix-c.o hardware-mapping.o \
-        pixel-mapper.o multiplex-mappers.o \
-	content-streamer.o matrix-factory.o
+	matrix-factory.o thread.o bdf-font.o graphics.o led-matrix-c.o hardware-mapping.o \
+	pixel-mapper.o multiplex-mappers.o frame-sequence.o \
+	content-streamer.o content-streamer-c.o frame-sequence-c.o \
+	rp1/rp1_pio_backend.o rp1/rp1_pio_support.o rp1/rp1_rio_backend.o
 
 TARGET=librgbmatrix
 
@@ -172,8 +175,6 @@ DEFINES+=$(USER_DEFINES)
 
 DEFINES+=-DDEFAULT_HARDWARE='"$(HARDWARE_DESC)"'
 INCDIR=../include
-CFLAGS=-W -Wall -Wextra -Wno-unused-parameter -O3 -g -fPIC $(DEFINES) -march=native
-CXXFLAGS=$(CFLAGS) -fno-exceptions -std=c++17
 
 # Creating a lib for crosscompilation. Other option is to compile directly but
 # that makes the build process for all the different binaries more convoluted.
@@ -207,6 +208,12 @@ CXXFLAGS=$(CFLAGS) -fno-exceptions -std=c++17
 #
 # Different mappings designated by flag name. Add more if needed.
 
+RP1_PIO_VENDOR_DIR=./rp1/rp1_pio_vendor
+RP1_PIO_INCLUDES=-I$(RP1_PIO_VENDOR_DIR)/piolib/include -I$(RP1_PIO_VENDOR_DIR)/include
+
+CFLAGS=-W -Wall -Wextra -Wno-unused-parameter -O3 $(CPU_ARCH_FLAGS) $(LTO_FLAGS) -g -fPIC $(DEFINES) $(RP1_PIO_INCLUDES)
+CXXFLAGS=$(CFLAGS) -fno-exceptions -std=c++17
+
 # Should we enable emulator support?
 ENABLE_EMULATOR?=0
 
@@ -229,10 +236,6 @@ RGB_LIBRARY=$(RGB_LIBDIR)/lib$(RGB_LIBRARY_NAME).a
 LDFLAGS+=-L$(RGB_LIBDIR) -l$(RGB_LIBRARY_NAME) -lrt -lm -lpthread
 
 INCLUDES=-I../include -I.
-# Comment out or remove this duplicate OBJECTS line:
-#OBJECTS=gpio.o led-matrix.o framebuffer.o thread.o bdf-font.o graphics.o led-matrix-c.o \
-#        hardware-mapping.o pixel-mapper.o multiplex-mappers.o content-streamer.o \
-#        utf8-internal.o options-initialize.o
 
 all : $(TARGET).a $(TARGET).so.1
 
@@ -240,7 +243,7 @@ $(TARGET).a : $(OBJECTS)
 	$(AR) rcs $@ $^
 
 $(TARGET).so.1 : $(OBJECTS)
-	$(CXX) -shared -Wl,-soname,$@ -o $@ $^ -lpthread  -lrt -lm -lpthread
+	$(CXX) -shared $(LTO_FLAGS) -Wl,-soname,$@ -o $@ $^ -lpthread  -lrt -lm -lpthread
 
 led-matrix.o: led-matrix.cc $(INCDIR)/led-matrix.h
 frame-canvas.o: frame-canvas.cc framebuffer-interface.h $(INCDIR)/led-matrix.h
@@ -257,7 +260,30 @@ graphics.o: graphics.cc utf8-internal.h
 clean:
 	rm -f $(OBJECTS) $(TARGET).a $(TARGET).so.1
 
+# `sudo make install` puts the shared library, the headers and a pkg-config
+# file under PREFIX, so other projects can build against it with
+#   pkg-config --cflags --libs rgbmatrix
+# Headers go to $(INCLUDEDIR)/rgbmatrix/ since names like graphics.h are generic.
+PREFIX?=/usr/local
+LIBDIR?=$(PREFIX)/lib
+INCLUDEDIR?=$(PREFIX)/include
+PKGCONFIGDIR?=$(LIBDIR)/pkgconfig
+
+install: $(TARGET).so.1
+	install -d $(DESTDIR)$(LIBDIR) $(DESTDIR)$(INCLUDEDIR)/rgbmatrix $(DESTDIR)$(PKGCONFIGDIR)
+	install -m 644 $(TARGET).so.1 $(DESTDIR)$(LIBDIR)/
+	ln -sf $(TARGET).so.1 $(DESTDIR)$(LIBDIR)/$(TARGET).so
+	install -m 644 $(INCDIR)/*.h $(DESTDIR)$(INCLUDEDIR)/rgbmatrix/
+	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@LIBDIR@|$(LIBDIR)|' \
+	    -e 's|@INCLUDEDIR@|$(INCLUDEDIR)|' rgbmatrix.pc.in > $(DESTDIR)$(PKGCONFIGDIR)/rgbmatrix.pc
+	if [ -z "$(DESTDIR)" ]; then ldconfig || true; fi
+
+uninstall:
+	rm -f $(DESTDIR)$(LIBDIR)/$(TARGET).so.1 $(DESTDIR)$(LIBDIR)/$(TARGET).so
+	rm -rf $(DESTDIR)$(INCLUDEDIR)/rgbmatrix
+	rm -f $(DESTDIR)$(PKGCONFIGDIR)/rgbmatrix.pc
+
 compiler-flags: FORCE
 	@echo '$(CXX) $(CXXFLAGS)' | cmp -s - $@ || echo '$(CXX) $(CXXFLAGS)' > $@
 
-.PHONY: FORCE
+.PHONY: FORCE install uninstall
