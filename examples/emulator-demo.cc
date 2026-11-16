@@ -149,6 +149,9 @@ int main(int argc, char *argv[]) {
 
     // Swap buffers
     offscreen = matrix->SwapOnVSync(offscreen);
+    // The emulator has no refresh thread; draw the swapped-in frame.
+    if (auto *emulator = dynamic_cast<EmulatorMatrix *>(matrix))
+      emulator->Render();
     
     // Sleep for a bit to control animation speed
     usleep(16000);  // ~60 Hz refresh rate

@@ -25,6 +25,162 @@ Yes, you are also allowed to use
 this code under the [GNU General Public License Version 3.0](http://www.gnu.org/licenses/gpl-3.0.txt)
 which allows linking with Apache 2.0 code and LGPL-3.0 code.
 
+About this fork
+---------------
+
+This is a fork of [hzeller/rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix)
+that adds the following to the upstream library:
+
+  * **An emulator.** `EmulatorMatrix` implements the same `RGBMatrixBase`
+    interface as the hardware `RGBMatrix`, so you can develop and test on a
+    desktop without a Raspberry Pi or panels. On Linux it opens an SDL2 window
+    (or runs headless). On Windows it is a headless-only backend.
+  * **`MatrixFactory`**, which picks hardware or emulator at runtime from the
+    `--led-emulator` command line flag.
+  * **A CMake build** that produces a shared library and installs a CMake
+    package (`find_package(rpi-rgb-led-matrix)`). It works with vcpkg.
+  * **Bulk RGB frame writes** and faster framebuffer readback (see
+    [below](#bulk-rgb-frame-writes)).
+  * `ContentStreamer` additions, such as peeking at the next frame.
+
+Upstream additions made after the fork, such as Raspberry Pi 5 support, are not
+included here.
+
+### Getting started
+
+#### Building on the Raspberry Pi (hardware only)
+
+The upstream Makefile build still works:
+
+```
+make -C examples-api-use
+sudo examples-api-use/demo -D0
+```
+
+Or use CMake to build and install the shared library:
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+sudo cmake --install build
+```
+
+#### Building with the emulator on Linux
+
+Install SDL2 first (on Debian/Ubuntu: `sudo apt install libsdl2-dev`), then:
+
+```
+cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+You can also build with Make, using `make ENABLE_EMULATOR=1`. This also builds
+`examples/emulator-demo`, which you can run with:
+
+```
+examples/emulator-demo --led-emulator --led-emulator-scale=8
+```
+
+A build with `ENABLE_EMULATOR=ON` still contains the hardware backend. A program
+only uses the emulator when `--led-emulator` is passed or
+`MatrixFactory::Options::use_emulator` is set.
+
+#### Building on Windows (headless emulator)
+
+Native Windows builds support only the headless emulator, and configuring
+without `-DENABLE_EMULATOR=ON` fails. They provide `Canvas`, `FrameCanvas`,
+`EmulatorMatrix`, graphics/font, and content-streaming APIs without GPIO or
+SDL. They are meant for desktop render workers, previews and tests.
+
+```powershell
+cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
+#### CMake options
+
+Option            | Default | Description
+:---------------- | :------ | :-----------
+`ENABLE_EMULATOR` | `OFF`   | Build the emulator. Requires SDL2 on Linux; required on Windows.
+`BUILD_TESTS`     | `OFF`   | Build the regression, streaming and emulator tests (run with `ctest`).
+
+#### Using the library from your own CMake project
+
+After `cmake --install`, or when the library is provided through vcpkg:
+
+```cmake
+find_package(rpi-rgb-led-matrix CONFIG REQUIRED)
+target_link_libraries(my-app PRIVATE rpi_rgb_led_matrix::rpi-rgb-led-matrix)
+```
+
+The package also sets `RPI_RGB_LED_MATRIX_FONTS_DIR` to the installed
+`fonts/` directory. If the library was built with the SDL emulator, the package
+looks up SDL2 for you, and `ENABLE_EMULATOR` is defined for consumers.
+
+#### Using the emulator in code
+
+Create the matrix through `MatrixFactory` so the same binary can run on hardware
+or in the emulator:
+
+```c++
+#include "matrix-factory.h"
+#include "graphics.h"
+
+using namespace rgb_matrix;
+
+int main(int argc, char *argv[]) {
+  MatrixFactory::Options options;
+  options.led_options.rows = 32;
+  options.led_options.cols = 64;
+  if (!MatrixFactory::ParseOptionsFromFlags(&argc, &argv, &options)) {
+    MatrixFactory::PrintMatrixFactoryFlags(stderr, options);
+    return 1;
+  }
+
+  RGBMatrixBase *matrix = MatrixFactory::CreateMatrix(options);
+  if (matrix == nullptr) return 1;
+
+  FrameCanvas *offscreen = matrix->CreateFrameCanvas();
+  for (int frame = 0; frame < 600; ++frame) {
+    offscreen->Fill(0, 0, 0);
+    DrawCircle(offscreen, frame % offscreen->width(), offscreen->height() / 2,
+               8, Color(255, 0, 0));
+    offscreen = matrix->SwapOnVSync(offscreen);
+#ifdef ENABLE_EMULATOR
+    // The emulator has no refresh thread. Call Render() after each swap to
+    // draw the window and/or write the frame export file.
+    if (auto *emulator = dynamic_cast<EmulatorMatrix *>(matrix))
+      emulator->Render();
+#endif
+  }
+  delete matrix;
+}
+```
+
+Run it on hardware as usual, or pass `--led-emulator` to use the emulator. The
+emulator takes these extra flags:
+
+Flag                                  | Description
+:------------------------------------ | :-----------
+`--led-emulator`                      | Use the emulator instead of GPIO hardware.
+`--led-emulator-scale=<n>`            | Window scale factor (default 10).
+`--led-emulator-title=<title>`        | Window title.
+`--led-emulator-refresh=<hz>`         | Display refresh rate (default 60).
+`--led-emulator-hardware-timing`      | Emulate hardware timing.
+`--led-emulator-headless`             | No window. Always on for Windows builds.
+`--led-emulator-frame-export=<path>`  | On each `Render()`, write the current frame to `<path>`.
+
+The frame export file holds the width and height as two native-endian `uint32`
+values, followed by `width * height` RGB888 pixels in row-major order, with
+brightness applied. The Windows backend writes to `<path>.tmp` and then renames
+it, so readers never see a half-written frame.
+
+The emulator does not apply pixel mappers or GPIO-specific options, such as
+`--led-slowdown-gpio`. The canvas size is `cols * chain_length` by
+`rows * parallel`.
+
 ## Bulk RGB frame writes
 
 `FrameCanvas::SetRGB(x, y, width, height, rgb)` accepts packed, row-major RGB888
@@ -66,21 +222,6 @@ use the demo binary provided here which provides some useful examples.
 Check out [utils/ directory for some ready-made tools](./utils) to get started
 using the library, or the [examples-api-use/](./examples-api-use) directory if
 you want to get started programming your own utils.
-
-### Native Windows headless emulator
-
-CMake supports a native Windows headless emulator for desktop render workers,
-previews, and tests. It provides `Canvas`, `FrameCanvas`, `EmulatorMatrix`,
-graphics/font, and content-streaming APIs without Raspberry Pi GPIO or SDL.
-Physical HUB75 output remains Raspberry-Pi-only.
-
-```powershell
-cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
-cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
-```
-
-Linux `ENABLE_EMULATOR=ON` continues to use the SDL emulator.
 
 Panels supported
 ----------------
@@ -284,6 +425,8 @@ The library comes as an API that you can use for your own utilities and use-case
   * The native library is a C++ library (see [include/](./include)).
     Example uses you find in the [examples-api-use/](./examples-api-use)
     directory.
+  * To develop without a Pi, build with the [emulator](#using-the-emulator-in-code)
+    and create the matrix through `MatrixFactory` (see [include/matrix-factory.h](./include/matrix-factory.h)).
   * If you prefer to program in C, there is also a
     [C API](./include/led-matrix-c.h).
   * In the [python](./bindings/python) subdirectory, you find a Python API including a
