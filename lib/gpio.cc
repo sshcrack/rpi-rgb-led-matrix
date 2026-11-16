@@ -27,6 +27,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <string>
+
 /*
  * nanosleep() takes longer than requested because of OS jitter.
  * In about 99.9% of the cases, this is <= 25 microcseconds on
@@ -261,6 +263,16 @@ static int ReadTextFileToBuffer(char *buffer, size_t size,
   return r;
 }
 
+// Problems found while detecting the Pi model. They are reported only when
+// GPIO hardware is actually initialized, so programs that merely construct
+// RuntimeOptions (e.g. when running the emulator on a desktop) stay quiet.
+static std::string s_pi_model_diagnostics;
+
+static void AddPiModelDiagnostic(const std::string &message) {
+  s_pi_model_diagnostics += message;
+  s_pi_model_diagnostics += '\n';
+}
+
 /*
  * Try to read the revision from /proc/cpuinfo. In case of any errors, or if
  * /proc/cpuinfo simply contains zero as the revision, this function returns
@@ -269,13 +281,13 @@ static int ReadTextFileToBuffer(char *buffer, size_t size,
 static uint32_t ReadRevisionFromProcCpuinfo() {
   char buffer[4096];
   if (ReadTextFileToBuffer(buffer, sizeof(buffer), "/proc/cpuinfo") < 0) {
-    fprintf(stderr, "Reading cpuinfo: Could not determine Pi model\n");
+    AddPiModelDiagnostic("Reading cpuinfo: Could not determine Pi model");
     return 0;
   }
   static const char RevisionTag[] = "Revision";
   const char *revision_key;
   if ((revision_key = strstr(buffer, RevisionTag)) == NULL) {
-    fprintf(stderr, "non-existent Revision: Could not determine Pi model\n");
+    AddPiModelDiagnostic("non-existent Revision: Could not determine Pi model");
     return 0;
   }
   unsigned int pi_revision;
@@ -295,7 +307,8 @@ static uint32_t ReadRevisionFromDeviceTree() {
   const char *const kDeviceTreeRev = "/proc/device-tree/system/linux,revision";
   uint8_t buffer[4];
   if (ReadBinaryFileToBuffer(buffer, sizeof(buffer), kDeviceTreeRev) != 4) {
-    fprintf(stderr, "Failed to read revision from %s\n", kDeviceTreeRev);
+    AddPiModelDiagnostic(std::string("Failed to read revision from ") +
+                         kDeviceTreeRev);
     return 0;
   }
   return read_be32(buffer);
@@ -306,7 +319,7 @@ static RaspberryPiModel DetermineRaspberryModel() {
   if (pi_revision == 0) {
     pi_revision = ReadRevisionFromDeviceTree();
     if (pi_revision == 0) {
-      fprintf(stderr, "Unknown Revision: Could not determine Pi model\n");
+      AddPiModelDiagnostic("Unknown Revision: Could not determine Pi model");
       return PI_MODEL_3;  // safe guess fallback.
     }
   }
@@ -427,6 +440,12 @@ static bool mmap_all_bcm_registers_once() {
 
 bool GPIO::Init(int slowdown) {
   slowdown_ = slowdown;
+
+  GetPiModel();  // Make sure detection ran, then report what went wrong.
+  if (!s_pi_model_diagnostics.empty()) {
+    fputs(s_pi_model_diagnostics.c_str(), stderr);
+    s_pi_model_diagnostics.clear();
+  }
 
   // Pre-mmap all bcm registers we need now and possibly in the future, as to
   // allow  dropping privileges after GPIO::Init() even as some of these

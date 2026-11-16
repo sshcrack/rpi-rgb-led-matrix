@@ -255,45 +255,6 @@ bool EmulatorMatrix::luminance_correct() const { return impl_->luminance_correct
 bool EmulatorMatrix::StartRefresh() { return true; }
 void EmulatorMatrix::Render() { impl_->ExportFrame(); }
 
-bool ParseEmulatorOptionsFromFlags(int *argc, char ***argv, EmulatorOptions *options, bool remove_consumed_flags) {
-  if (!argc || !argv || !*argv || !options) return false;
-  int write_index = 1;
-  for (int i = 1; i < *argc; ++i) {
-    const char *option = (*argv)[i];
-    if (!option) continue;
-    bool consumed = false;
-    if (std::strncmp(option, "--led-emulator-scale=", 21) == 0) {
-      options->display_scale = std::atoi(option + 21); consumed = true;
-    } else if (std::strncmp(option, "--led-emulator-title=", 21) == 0) {
-      options->window_title = option + 21; consumed = true;
-    } else if (std::strncmp(option, "--led-emulator-refresh=", 23) == 0) {
-      options->refresh_rate_hz = std::atoi(option + 23); consumed = true;
-    } else if (std::strcmp(option, "--led-emulator-hardware-timing") == 0) {
-      options->emulate_hardware_timing = true; consumed = true;
-    } else if (std::strncmp(option, "--led-emulator-frame-export=", 28) == 0) {
-      options->frame_export_path = option + 28; consumed = true;
-    } else if (std::strcmp(option, "--led-emulator-headless") == 0) {
-      options->headless = true; consumed = true;
-    }
-    if (!remove_consumed_flags || !consumed) (*argv)[write_index++] = (*argv)[i];
-  }
-  if (remove_consumed_flags) {
-    for (int i = write_index; i < *argc; ++i) (*argv)[i] = nullptr;
-    *argc = write_index;
-  }
-  return true;
-}
-
-void PrintEmulatorFlags(FILE *out, const EmulatorOptions &defaults) {
-  std::fprintf(out,
-      "\t--led-emulator-scale=<scale>       : Window scale factor (Default: %d)\n"
-      "\t--led-emulator-title=<title>       : Window title (Default: %s)\n"
-      "\t--led-emulator-refresh=<hz>        : Refresh rate (Default: %d)\n"
-      "\t--led-emulator-frame-export=<path> : Export raw RGB frames\n"
-      "\t--led-emulator-headless            : Headless mode (Default: on)\n",
-      defaults.display_scale, defaults.window_title.c_str(), defaults.refresh_rate_hz);
-}
-
 }  // namespace rgb_matrix
 
 #endif

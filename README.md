@@ -43,8 +43,8 @@ that adds the following to the upstream library:
     [below](#bulk-rgb-frame-writes)).
   * `ContentStreamer` additions, such as peeking at the next frame.
 
-Upstream additions made after the fork, such as Raspberry Pi 5 support, are not
-included here.
+The fork is regularly synced with upstream, so upstream features such as
+Raspberry Pi 5 support and frame sequences are available here too.
 
 ### Getting started
 
@@ -160,11 +160,16 @@ int main(int argc, char *argv[]) {
 ```
 
 Run it on hardware as usual, or pass `--led-emulator` to use the emulator. The
-emulator takes these extra flags:
+emulator takes these extra flags. Like the other `--led-*` flags, value flags
+accept both `--flag=value` and `--flag value`, and boolean flags can be negated
+with `no-` (e.g. `--led-emulator-no-headless`). The `--led-emulator-*` flags are
+accepted even without `--led-emulator`, so one command line works for both
+hardware and emulator runs. Misspelled emulator flags produce a warning, and
+invalid values (e.g. `--led-emulator-scale=0`) make parsing fail.
 
 Flag                                  | Description
 :------------------------------------ | :-----------
-`--led-emulator`                      | Use the emulator instead of GPIO hardware.
+`--led-emulator`                      | Use the emulator instead of GPIO hardware (`--led-no-emulator` turns it off again).
 `--led-emulator-scale=<n>`            | Window scale factor (default 10).
 `--led-emulator-title=<title>`        | Window title.
 `--led-emulator-refresh=<hz>`         | Display refresh rate (default 60).

@@ -254,7 +254,12 @@ static bool FlagInit(int &argc, char **&argv,
         continue;
       }
 
-      if (strncmp(*it, OPTION_PREFIX, OPTION_PREFIX_LEN) == 0) {
+      if (strncmp(*it, OPTION_PREFIX, OPTION_PREFIX_LEN) == 0
+#ifdef ENABLE_EMULATOR
+          // Handled by MatrixFactory / ParseEmulatorOptionsFromFlags().
+          && strncmp(*it, OPTION_PREFIX "emulator", OPTION_PREFIX_LEN + 8) != 0
+#endif
+          ) {
         fprintf(stderr, "Option %s starts with %s but it is unknown. Typo?\n",
                 *it, OPTION_PREFIX);
       }
@@ -272,6 +277,7 @@ static bool FlagInit(int &argc, char **&argv,
     for (int i = 0; i < argc; ++i) {
       argv[i] = unused_options[i];
     }
+    argv[argc] = NULL;  // Keep argv NULL-terminated, like the original.
   }
   return true;
 }

@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://gnu.org/licenses/gpl-2.0.txt>
 
 #include "matrix-factory.h"
+#include <stdio.h>
 #include <string.h>
 #include <iostream>
 
@@ -52,46 +53,54 @@ namespace rgb_matrix
                                               MatrixFactory::Options *options,
                                               bool remove_consumed_flags)
     {
-        if (!options)
+        if (!options || !argc || !argv || !*argv)
             return false;
 
-        // First, check for --led-emulator flag
+        // Handle --led-emulator (and --led-no-emulator) ourselves. Consumed
+        // flags are removed by compacting argv, so later parsers and the
+        // program never see a leftover placeholder argument.
+        char **args = *argv;
+        int kept = (*argc > 0) ? 1 : 0;
         for (int i = 1; i < *argc; ++i)
         {
-            if (strcmp((*argv)[i], "--led-emulator") == 0)
+            bool consumed = false;
+            if (args[i] && strcmp(args[i], "--led-emulator") == 0)
             {
                 options->use_emulator = true;
-                if (remove_consumed_flags)
-                {
-                    // Very unclean way of doing this, but it works
-                    (*argv)[i] = "";
-                }
+                consumed = true;
             }
+            else if (args[i] && strcmp(args[i], "--led-no-emulator") == 0)
+            {
+                options->use_emulator = false;
+                consumed = true;
+            }
+            if (!consumed || !remove_consumed_flags)
+                args[kept++] = args[i];
+        }
+        if (remove_consumed_flags)
+        {
+            for (int i = kept; i < *argc; ++i)
+                args[i] = nullptr;
+            *argc = kept;
         }
 
-        // Parse options for the appropriate matrix type
-        bool result = true;
-        rgb_matrix::RuntimeOptions *rt_options = &options->runtime_options;
-
-        // Parse core RGB matrix options regardless of type
-        result &= rgb_matrix::ParseOptionsFromFlags(argc, argv, &options->led_options, rt_options, remove_consumed_flags);
 #ifdef ENABLE_EMULATOR
+        // Always consume the --led-emulator-* flags so they are accepted (and
+        // checked for typos) even when running on hardware.
+        if (!rgb_matrix::ParseEmulatorOptionsFromFlags(argc, argv, &options->emulator_options, remove_consumed_flags))
+            return false;
+#else
         if (options->use_emulator)
         {
-            // Parse emulator-specific options
-            result &= rgb_matrix::ParseEmulatorOptionsFromFlags(argc, argv, &options->emulator_options, remove_consumed_flags);
+            fprintf(stderr, "--led-emulator given, but this program was built without emulator support (ENABLE_EMULATOR).\n");
+            return false;
         }
-        else
-        {
-            // Parse hardware-specific runtime options
-            // Use a temporary variable with the exact type to help the compiler pick the right overload
-            result &= rgb_matrix::ParseOptionsFromFlags(argc, argv, &options->led_options, rt_options, remove_consumed_flags);
-        }
-#else
-        result &= rgb_matrix::ParseOptionsFromFlags(argc, argv, &options->led_options, rt_options, remove_consumed_flags);
 #endif
 
-        return result;
+        // Core --led-* flags apply to hardware and emulator alike.
+        return rgb_matrix::ParseOptionsFromFlags(argc, argv, &options->led_options,
+                                                 &options->runtime_options,
+                                                 remove_consumed_flags);
     }
 
     void MatrixFactory::PrintMatrixFactoryFlags(FILE *out, const MatrixFactory::Options &defaults)
@@ -100,7 +109,8 @@ namespace rgb_matrix
         fprintf(out, "General matrix selection:\n");
 
 #ifdef ENABLE_EMULATOR
-        fprintf(out, "\t--led-emulator          : Use emulator instead of actual hardware\n\n");
+        fprintf(out, "\t--led-emulator          : Use emulator instead of actual hardware (Default: %s)\n\n",
+                defaults.use_emulator ? "on" : "off");
 #endif
         // Print both sets of options
         fprintf(out, "Hardware matrix options:\n");

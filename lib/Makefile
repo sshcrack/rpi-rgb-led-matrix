@@ -220,7 +220,7 @@ ENABLE_EMULATOR?=0
 # Additional flags for emulator when enabled
 ifeq ($(ENABLE_EMULATOR), 1)
   CXXFLAGS+=-DENABLE_EMULATOR
-  OBJECTS+=emulator.o
+  OBJECTS+=emulator.o emulator-flags.o
   # SDL2 flags, use sdl2-config tool to find them
   SDL2_CFLAGS=$(shell sdl2-config --cflags)
   SDL2_LDFLAGS=$(shell sdl2-config --libs)
