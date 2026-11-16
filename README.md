@@ -1,32 +1,16 @@
-Controlling RGB LED display with Raspberry Pi GPIO
-==================================================
+rpi-rgb-led-matrix (sshcrack fork)
+==================================
 
-A library to control commonly available 128x64, 64x64, 32x32 or 16x32 RGB LED panels
-with the Raspberry Pi. Can support PWM up to 11Bit per channel, providing
-true 24bpp color with CIE1931 profile.
+> **This README has two parts.** The first part documents this fork: the
+> emulator, `MatrixFactory`, the CMake/vcpkg package and the other additions.
+> The second part, starting at [Upstream README](#upstream-readme), is the
+> original README of [hzeller/rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix),
+> kept as is. It covers wiring, panels, flags and troubleshooting.
+>
+> Like upstream, this library is licensed under the GPL 2.0 or later (see
+> [below](#upstream-readme) and [COPYING](./COPYING)).
 
-Supports 3 chains with many panels each on a regular Pi.
-On a Raspberry Pi 2 or 3, you can easily chain 12 panels in that chain
-(so 36 panels total), but you can theoretically stretch that to up
-to 96-ish panels (32 chain length) and still reach
-around 100Hz refresh rate with full 24Bit color (theoretical - never tested
-this; there might likely be timing problems with the panels that will creep
-up then).
-
-With fewer colors or so-called 'outdoor panels' you can control even more,
-faster.
-
-The LED-matrix library is (c) Henner Zeller <h.zeller@acm.org>, licensed with
-[GNU General Public License Version 2.0 (or any later version)](http://www.gnu.org/licenses/gpl-2.0.txt)
-(which means, if you use it in a product somewhere, you need to make the
-source and all your modifications available to the receiver of such product so
-that they have the freedom to adapt and improve).
-Yes, you are also allowed to use
-this code under the [GNU General Public License Version 3.0](http://www.gnu.org/licenses/gpl-3.0.txt)
-which allows linking with Apache 2.0 code and LGPL-3.0 code.
-
-About this fork
----------------
+## About this fork
 
 This is a fork of [hzeller/rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix)
 that adds the following to the upstream library:
@@ -205,6 +189,46 @@ scalar writes across panel layouts, mappings, brightness and color settings. Run
 `./build/bulk-framebuffer-test --benchmark` for isolated full-frame write/readback
 timings without opening GPIO. This measures conversion cost, not panel refresh
 rate or whole-application FPS.
+
+<!-- ======================= END OF FORK README ======================= -->
+
+---
+
+<a id="upstream-readme"></a>
+
+> ⬇️ **Upstream README.** Everything below comes from
+> [hzeller/rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix)
+> and applies to this fork too. The fork-specific documentation is
+> [above](#about-this-fork).
+
+<!-- ===================== START OF UPSTREAM README ==================== -->
+
+Controlling RGB LED display with Raspberry Pi GPIO
+==================================================
+
+A library to control commonly available 128x64, 64x64, 32x32 or 16x32 RGB LED panels
+with the Raspberry Pi. Can support PWM up to 11Bit per channel, providing
+true 24bpp color with CIE1931 profile.
+
+Supports 3 chains with many panels each on a regular Pi.
+On a Raspberry Pi 2 or 3, you can easily chain 12 panels in that chain
+(so 36 panels total), but you can theoretically stretch that to up
+to 96-ish panels (32 chain length) and still reach
+around 100Hz refresh rate with full 24Bit color (theoretical - never tested
+this; there might likely be timing problems with the panels that will creep
+up then).
+
+With fewer colors or so-called 'outdoor panels' you can control even more,
+faster.
+
+The LED-matrix library is (c) Henner Zeller <h.zeller@acm.org>, licensed with
+[GNU General Public License Version 2.0 (or any later version)](http://www.gnu.org/licenses/gpl-2.0.txt)
+(which means, if you use it in a product somewhere, you need to make the
+source and all your modifications available to the receiver of such product so
+that they have the freedom to adapt and improve).
+Yes, you are also allowed to use
+this code under the [GNU General Public License Version 3.0](http://www.gnu.org/licenses/gpl-3.0.txt)
+which allows linking with Apache 2.0 code and LGPL-3.0 code.
 
 ## Discourse discussion group
 
@@ -430,8 +454,6 @@ The library comes as an API that you can use for your own utilities and use-case
   * The native library is a C++ library (see [include/](./include)).
     Example uses you find in the [examples-api-use/](./examples-api-use)
     directory.
-  * To develop without a Pi, build with the [emulator](#using-the-emulator-in-code)
-    and create the matrix through `MatrixFactory` (see [include/matrix-factory.h](./include/matrix-factory.h)).
   * If you prefer to program in C, there is also a
     [C API](./include/led-matrix-c.h).
   * In the [python](./bindings/python) subdirectory, you find a Python API including a
