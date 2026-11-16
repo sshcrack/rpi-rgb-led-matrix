@@ -26,6 +26,8 @@ that adds the following to the upstream library:
   * **Bulk RGB frame writes** and faster framebuffer readback (see
     [below](#bulk-rgb-frame-writes)).
   * `ContentStreamer` additions, such as peeking at the next frame.
+  * **A [cross-compilation guide](#cross-compiling-for-the-raspberry-pi)** for
+    building on a desktop and running on the Pi.
 
 The fork is regularly synced with upstream, so upstream features such as
 Raspberry Pi 5 support and frame sequences are available here too.
@@ -82,6 +84,63 @@ cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
+
+#### Cross-compiling for the Raspberry Pi
+
+Compiling a large program on the Pi itself can take minutes per change,
+especially on a Pi 3. Cross-compiling on a desktop takes seconds, and together
+with the emulator it lets you iterate quickly and only copy finished binaries to
+the Pi.
+
+You need two things: an aarch64 cross compiler, and a sysroot (a copy of the
+Pi's `/lib`, `/usr/lib` and `/usr/include`) so you link against the same
+libraries the Pi has.
+
+**1. Get a toolchain and sysroot.** The quickest option is the bundle used by
+[led-matrix](https://github.com/sshcrack/led-matrix), which contains GCC 12.2.0
+for aarch64, a Raspberry Pi OS Bookworm 64-bit sysroot (glibc 2.36) and a CMake
+toolchain file (about 1.8 GB unpacked):
+
+```
+mkdir -p ~/pi-cross && cd ~/pi-cross
+wget https://github.com/sshcrack/led-matrix/releases/download/v0.0.1-beta/cross-compile.tar.xz
+tar -xf cross-compile.tar.xz && rm cross-compile.tar.xz
+```
+
+Binaries built with this sysroot run on 64-bit Raspberry Pi OS Bookworm or
+newer. If your Pi runs a different OS, or you installed extra libraries on it,
+build a sysroot from your own Pi instead. The bundle contains `rsync.sh`, which
+copies `/lib`, `/usr/lib`, `/usr/include` and `/opt/vc` from a host called
+`ledmat` into `rootfs/` (change the host name to yours), and then runs
+`sysroot-relativelinks.py` to turn absolute symlinks into relative ones:
+
+```
+cd ~/pi-cross && ./rsync.sh
+```
+
+**2. Build with the toolchain file.**
+
+```
+cmake -S . -B build-pi -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=$HOME/pi-cross/PI.cmake
+cmake --build build-pi -j
+file build-pi/librpi-rgb-led-matrix.so   # should say "ARM aarch64"
+```
+
+**3. Copy it to the Pi** and run it there as usual, for example with
+`scp` or `rsync`. To use the library from your own cross-compiled project,
+either add this repository as a subdirectory or install it into the sysroot
+with `cmake --install build-pi --prefix $HOME/pi-cross/rootfs/usr/local` and
+pass the same toolchain file to your project; `find_package` then finds it
+as described [below](#using-the-library-from-your-own-cmake-project). The Pi
+also needs `librpi-rgb-led-matrix.so` at runtime, so copy it to
+`/usr/local/lib` there and run `sudo ldconfig`.
+
+For a complete setup with vcpkg dependencies, CMake presets and `.deb`
+packaging, see how [led-matrix](https://github.com/sshcrack/led-matrix) does it:
+its `cross-compile` preset in `CMakePresets.json`, `cmake/PI.cmake` (downloads
+the bundle automatically on first configure) and the `arm64-rpi` vcpkg triplet
+in `cmake/triplets/`.
 
 #### CMake options
 
