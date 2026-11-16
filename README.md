@@ -96,27 +96,44 @@ You need two things: an aarch64 cross compiler, and a sysroot (a copy of the
 Pi's `/lib`, `/usr/lib` and `/usr/include`) so you link against the same
 libraries the Pi has.
 
-**1. Get a toolchain and sysroot.** The quickest option is the bundle used by
-[led-matrix](https://github.com/sshcrack/led-matrix), which contains GCC 12.2.0
-for aarch64, a Raspberry Pi OS Bookworm 64-bit sysroot (glibc 2.36) and a CMake
-toolchain file (about 1.8 GB unpacked):
+**1. Get a toolchain and sysroot.** There are two ways.
+
+*Quick start: a prebuilt bundle.* The bundle used by
+[led-matrix](https://github.com/sshcrack/led-matrix) contains GCC 12.2.0 for
+aarch64, a Raspberry Pi OS Bookworm 64-bit sysroot (glibc 2.36) and a CMake
+toolchain file, `PI.cmake` (about 1.8 GB unpacked):
 
 ```
 mkdir -p ~/pi-cross && cd ~/pi-cross
 wget https://github.com/sshcrack/led-matrix/releases/download/v0.0.1-beta/cross-compile.tar.xz
-tar -xf cross-compile.tar.xz && rm cross-compile.tar.xz
+wget https://github.com/sshcrack/led-matrix/releases/download/v0.0.1-beta/cross-compile.tar.xz.sha512
+echo "$(cat cross-compile.tar.xz.sha512)  cross-compile.tar.xz" | sha512sum -c
+tar -xf cross-compile.tar.xz && rm cross-compile.tar.xz*
 ```
 
 Binaries built with this sysroot run on 64-bit Raspberry Pi OS Bookworm or
-newer. If your Pi runs a different OS, or you installed extra libraries on it,
-build a sysroot from your own Pi instead. The bundle contains `rsync.sh`, which
-copies `/lib`, `/usr/lib`, `/usr/include` and `/opt/vc` from a host called
-`ledmat` into `rootfs/` (change the host name to yours), and then runs
-`sysroot-relativelinks.py` to turn absolute symlinks into relative ones:
+newer.
 
-```
-cd ~/pi-cross && ./rsync.sh
-```
+*Your own setup: toolchain plus a sysroot copied from your Pi.* Use this if
+your Pi runs a different OS version, is 32-bit, or has extra libraries
+installed that you want to link against. The toolchain in the bundle comes from
+[abhiTronix/raspberry-pi-cross-compilers](https://github.com/abhiTronix/raspberry-pi-cross-compilers),
+which has prebuilt toolchains for every Pi and OS version. Its wiki explains
+the whole setup:
+
+  * [Installing the 64-bit cross compiler](https://github.com/abhiTronix/raspberry-pi-cross-compilers/wiki/64-Bit-Cross-Compiler-Installation-Instructions)
+  * [CMake usage guide with an rsynced sysroot](https://github.com/abhiTronix/raspberry-pi-cross-compilers/wiki/Raspberry-Pi-GCC-Cross-Compiler-ARM-Toolchains-CMake-Usage-Guide):
+    copies `/lib`, `/usr/lib` and `/usr/include` from your Pi, fixes the
+    symlinks, and gives you the `PI.cmake` toolchain file used below.
+
+The bundle above was made the same way and still contains the helper scripts:
+`rsync.sh` refreshes `rootfs/` from a Pi called `ledmat` (change the host name
+to yours) and runs `sysroot-relativelinks.py` to fix the symlinks.
+
+*Using vcpkg dependencies.* If your project gets its dependencies from vcpkg,
+see [How to use vcpkg with cross-compilation](https://github.com/abhiTronix/raspberry-pi-cross-compilers/discussions/123).
+It adds an `arm64-rpi` triplet and chainloads `PI.cmake` from vcpkg's toolchain
+file. The bundle's `PI.cmake` already includes the change described there.
 
 **2. Build with the toolchain file.**
 
