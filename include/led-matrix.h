@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "canvas.h"
+#include "refresh-timing.h"
 #include "pixel-mapper.h"
 #include "graphics.h"
 
@@ -324,6 +325,11 @@ public:
   //
   // Returns the bitmap of all GPIO input pins.
   uint64_t AwaitInputChange(int timeout_ms);
+
+  // Timing of the refresh thread (see refresh-timing.h): copies the
+  // cumulative counters into *out. Returns false when there is no hardware
+  // refresh thread (not started yet, or the emulator).
+  bool GetRefreshTiming(RefreshTiming *out) const;
 
   // Request user writable GPIO bits.
   // This allows to request a bitmap of GPIO-bits to be used by the user for

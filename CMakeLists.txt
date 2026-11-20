@@ -30,6 +30,7 @@ set(MATRIX_PORTABLE_SOURCES
     lib/content-streamer.cc
     lib/bdf-font.cc
     lib/graphics.cc
+    lib/refresh-timing.cc
 )
 
 if(WIN32)
@@ -93,6 +94,9 @@ if(BUILD_TESTS)
         target_link_libraries(bulk-framebuffer-test PRIVATE rpi-rgb-led-matrix)
         add_test(NAME bulk-framebuffer-test COMMAND bulk-framebuffer-test)
     endif()
+    add_executable(refresh-timing-test examples/refresh-timing-test.cc)
+    target_link_libraries(refresh-timing-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME refresh-timing-test COMMAND refresh-timing-test)
     add_executable(stream-io-test examples/stream-io-test.cc)
     target_link_libraries(stream-io-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME stream-io-test COMMAND stream-io-test)
