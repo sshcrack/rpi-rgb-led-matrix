@@ -331,6 +331,12 @@ public:
   // refresh thread (not started yet, or the emulator).
   bool GetRefreshTiming(RefreshTiming *out) const;
 
+  // Changes the refresh limit (Options::limit_refresh_rate_hz) at runtime; 0
+  // or less removes it. With a limit every refresh is padded (dark) to the
+  // same period, so brightness stays constant when bus contention stretches
+  // the refresh, as long as it still fits the period.
+  void SetRefreshLimit(int limit_refresh_hz);
+
   // Request user writable GPIO bits.
   // This allows to request a bitmap of GPIO-bits to be used by the user for
   // writing.

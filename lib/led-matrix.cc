@@ -107,6 +107,7 @@ public:
   uint64_t AwaitInputChange(int timeout_ms);
 
   bool GetRefreshTiming(RefreshTiming *out) const;
+  void SetRefreshLimit(int limit_refresh_hz);
 
   uint64_t RequestOutputs(uint64_t output_bits);
   void OutputGPIO(uint64_t output_bits);
@@ -169,6 +170,12 @@ public:
     running_ = false;
   }
 
+  // Takes effect from the next refresh; safe to call from any thread.
+  void SetRefreshLimit(int limit_refresh_hz) {
+    target_frame_usec_.store(limit_refresh_hz < 1 ? 0 : (uint32_t)(1e6 / limit_refresh_hz),
+                             std::memory_order_relaxed);
+  }
+
   // Copy of the refresh timing counters; safe to call from any thread.
   void GetRefreshTiming(RefreshTiming *out) const {
     out->refreshes = timing_refreshes_.load(std::memory_order_relaxed);
@@ -228,14 +235,17 @@ public:
       ++frame_count;
       ++low_bit_sequence;
 
-      if (target_frame_usec_) {
+      const uint32_t target_frame_usec =
+        target_frame_usec_.load(std::memory_order_relaxed);
+      if (target_frame_usec) {
         if (allow_busy_waiting_) {
-          while ((GetMicrosecondCounter() - start_time_us) < target_frame_usec_) {
+          while ((GetMicrosecondCounter() - start_time_us) < target_frame_usec) {
             // busy wait. We have our dedicated core, so ok to burn cycles.
           }
         } else {
           long spent_us = GetMicrosecondCounter() - start_time_us;
-          SleepMicroseconds(target_frame_usec_ - spent_us);
+          if (spent_us < (long)target_frame_usec)
+            SleepMicroseconds(target_frame_usec - spent_us);
         }
       }
 
@@ -296,7 +306,7 @@ private:
 
   GPIO *const io_;
   const bool show_refresh_;
-  const uint32_t target_frame_usec_;
+  std::atomic<uint32_t> target_frame_usec_;
   const bool allow_busy_waiting_;
   uint32_t start_bit_[4];
 
@@ -603,6 +613,11 @@ bool RGBMatrix::Impl::GetRefreshTiming(RefreshTiming *out) const {
   return true;
 }
 
+void RGBMatrix::Impl::SetRefreshLimit(int limit_refresh_hz) {
+  params_.limit_refresh_rate_hz = limit_refresh_hz < 1 ? 0 : limit_refresh_hz;
+  if (updater_) updater_->SetRefreshLimit(params_.limit_refresh_rate_hz);
+}
+
 uint64_t RGBMatrix::Impl::AwaitInputChange(int timeout_ms) {
   if (!updater_) return 0;
   if (Rp1PioIsActive() || Rp1RioIsActive()) return 0;
@@ -889,6 +904,10 @@ uint64_t RGBMatrix::RequestInputs(uint64_t all_interested_bits) {
 }
 bool RGBMatrix::GetRefreshTiming(RefreshTiming *out) const {
   return impl_->GetRefreshTiming(out);
+}
+
+void RGBMatrix::SetRefreshLimit(int limit_refresh_hz) {
+  impl_->SetRefreshLimit(limit_refresh_hz);
 }
 
 uint64_t RGBMatrix::AwaitInputChange(int timeout_ms) {
