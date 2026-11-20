@@ -16,6 +16,7 @@
 #include "led-matrix.h"
 
 #include <assert.h>
+#include <atomic>
 #include <grp.h>
 #include <pwd.h>
 #include <math.h>
@@ -34,6 +35,7 @@
 #include "rp1/rp1_rio_backend.h"
 #include "thread.h"
 #include "framebuffer-internal.h"
+#include "refresh-timing.h"
 #include "multiplex-mappers-internal.h"
 
 // C wrapper to reset global GPIO bookkeeping from external callers.
@@ -104,6 +106,9 @@ public:
   uint64_t RequestInputs(uint64_t);
   uint64_t AwaitInputChange(int timeout_ms);
 
+  bool GetRefreshTiming(RefreshTiming *out) const;
+  void SetRefreshLimit(int limit_refresh_hz);
+
   uint64_t RequestOutputs(uint64_t output_bits);
   void OutputGPIO(uint64_t output_bits);
 
@@ -165,6 +170,22 @@ public:
     running_ = false;
   }
 
+  // Takes effect from the next refresh; safe to call from any thread.
+  void SetRefreshLimit(int limit_refresh_hz) {
+    target_frame_usec_.store(limit_refresh_hz < 1 ? 0 : (uint32_t)(1e6 / limit_refresh_hz),
+                             std::memory_order_relaxed);
+  }
+
+  // Copy of the refresh timing counters; safe to call from any thread.
+  void GetRefreshTiming(RefreshTiming *out) const {
+    out->refreshes = timing_refreshes_.load(std::memory_order_relaxed);
+    out->total_micros = timing_total_micros_.load(std::memory_order_relaxed);
+    out->max_micros = timing_max_micros_.load(std::memory_order_relaxed);
+    for (int i = 0; i < RefreshTiming::kBuckets; ++i) {
+      out->histogram[i] = timing_histogram_[i].load(std::memory_order_relaxed);
+    }
+  }
+
   virtual void Run() {
     unsigned frame_count = 0;
     unsigned low_bit_sequence = 0;
@@ -214,18 +235,22 @@ public:
       ++frame_count;
       ++low_bit_sequence;
 
-      if (target_frame_usec_) {
+      const uint32_t target_frame_usec =
+        target_frame_usec_.load(std::memory_order_relaxed);
+      if (target_frame_usec) {
         if (allow_busy_waiting_) {
-          while ((GetMicrosecondCounter() - start_time_us) < target_frame_usec_) {
+          while ((GetMicrosecondCounter() - start_time_us) < target_frame_usec) {
             // busy wait. We have our dedicated core, so ok to burn cycles.
           }
         } else {
           long spent_us = GetMicrosecondCounter() - start_time_us;
-          SleepMicroseconds(target_frame_usec_ - spent_us);
+          if (spent_us < (long)target_frame_usec)
+            SleepMicroseconds(target_frame_usec - spent_us);
         }
       }
 
       const uint32_t end_time_us = GetMicrosecondCounter();
+      RecordRefresh(end_time_us - start_time_us);
       if (show_refresh_) {
         uint32_t usec = end_time_us - start_time_us;
         printf("\b\b\b\b\b\b\b\b%6.1fHz", 1e6 / usec);
@@ -263,9 +288,25 @@ private:
     return running_;
   }
 
+  // Only the refresh thread writes these, so plain load + store is enough.
+  void RecordRefresh(uint32_t usec) {
+    const int bucket = usec / RefreshTiming::kBucketMicros < RefreshTiming::kBuckets
+      ? static_cast<int>(usec / RefreshTiming::kBucketMicros)
+      : RefreshTiming::kBuckets - 1;
+    std::atomic<uint32_t> &slot = timing_histogram_[bucket];
+    slot.store(slot.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    timing_total_micros_.store(timing_total_micros_.load(std::memory_order_relaxed) + usec,
+                               std::memory_order_relaxed);
+    timing_refreshes_.store(timing_refreshes_.load(std::memory_order_relaxed) + 1,
+                            std::memory_order_relaxed);
+    if (usec > timing_max_micros_.load(std::memory_order_relaxed)) {
+      timing_max_micros_.store(usec, std::memory_order_relaxed);
+    }
+  }
+
   GPIO *const io_;
   const bool show_refresh_;
-  const uint32_t target_frame_usec_;
+  std::atomic<uint32_t> target_frame_usec_;
   const bool allow_busy_waiting_;
   uint32_t start_bit_[4];
 
@@ -281,6 +322,11 @@ private:
   FrameCanvas *current_frame_;
   FrameCanvas *next_frame_;
   unsigned requested_frame_multiple_;
+
+  std::atomic<uint32_t> timing_refreshes_{0};
+  std::atomic<uint32_t> timing_total_micros_{0};
+  std::atomic<uint32_t> timing_max_micros_{0};
+  std::atomic<uint32_t> timing_histogram_[RefreshTiming::kBuckets] = {};
 };
 
 // Some defaults. See options-initialize.cc for the command line parsing.
@@ -559,6 +605,17 @@ FrameCanvas *RGBMatrix::Impl::SwapOnVSync(FrameCanvas *other,
   FrameCanvas *const previous = updater_->SwapOnVSync(other, frame_fraction);
   if (other) active_ = other;
   return previous;
+}
+
+bool RGBMatrix::Impl::GetRefreshTiming(RefreshTiming *out) const {
+  if (!updater_ || !out) return false;
+  updater_->GetRefreshTiming(out);
+  return true;
+}
+
+void RGBMatrix::Impl::SetRefreshLimit(int limit_refresh_hz) {
+  params_.limit_refresh_rate_hz = limit_refresh_hz < 1 ? 0 : limit_refresh_hz;
+  if (updater_) updater_->SetRefreshLimit(params_.limit_refresh_rate_hz);
 }
 
 uint64_t RGBMatrix::Impl::AwaitInputChange(int timeout_ms) {
@@ -845,6 +902,14 @@ uint8_t RGBMatrix::brightness() { return impl_->brightness(); }
 uint64_t RGBMatrix::RequestInputs(uint64_t all_interested_bits) {
   return impl_->RequestInputs(all_interested_bits);
 }
+bool RGBMatrix::GetRefreshTiming(RefreshTiming *out) const {
+  return impl_->GetRefreshTiming(out);
+}
+
+void RGBMatrix::SetRefreshLimit(int limit_refresh_hz) {
+  impl_->SetRefreshLimit(limit_refresh_hz);
+}
+
 uint64_t RGBMatrix::AwaitInputChange(int timeout_ms) {
   return impl_->AwaitInputChange(timeout_ms);
 }

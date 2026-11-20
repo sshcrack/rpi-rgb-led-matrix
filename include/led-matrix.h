@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "canvas.h"
+#include "refresh-timing.h"
 #include "pixel-mapper.h"
 #include "graphics.h"
 
@@ -324,6 +325,17 @@ public:
   //
   // Returns the bitmap of all GPIO input pins.
   uint64_t AwaitInputChange(int timeout_ms);
+
+  // Timing of the refresh thread (see refresh-timing.h): copies the
+  // cumulative counters into *out. Returns false when there is no hardware
+  // refresh thread (not started yet, or the emulator).
+  bool GetRefreshTiming(RefreshTiming *out) const;
+
+  // Changes the refresh limit (Options::limit_refresh_rate_hz) at runtime; 0
+  // or less removes it. With a limit every refresh is padded (dark) to the
+  // same period, so brightness stays constant when bus contention stretches
+  // the refresh, as long as it still fits the period.
+  void SetRefreshLimit(int limit_refresh_hz);
 
   // Request user writable GPIO bits.
   // This allows to request a bitmap of GPIO-bits to be used by the user for
