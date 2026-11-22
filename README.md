@@ -17,8 +17,9 @@ that adds the following to the upstream library:
 
   * **An emulator.** `EmulatorMatrix` implements the same `RGBMatrixBase`
     interface as the hardware `RGBMatrix`, so you can develop and test on a
-    desktop without a Raspberry Pi or panels. On Linux it opens an SDL2 window
-    (or runs headless). On Windows it is a headless-only backend.
+    desktop without a Raspberry Pi or panels. One portable core runs on Linux
+    and Windows; it can show frames in an optional SDL2 window, write them to a
+    file, or run headless.
   * **`MatrixFactory`**, which picks hardware or emulator at runtime from the
     `--led-emulator` command line flag.
   * **A CMake build** that produces a shared library and installs a CMake
@@ -53,7 +54,8 @@ sudo cmake --install build
 
 #### Building with the emulator on Linux
 
-Install SDL2 first (on Debian/Ubuntu: `sudo apt install libsdl2-dev`), then:
+The emulator core has no dependencies. For the emulator window, install SDL2
+first (on Debian/Ubuntu: `sudo apt install libsdl2-dev`), then:
 
 ```
 cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
@@ -61,7 +63,12 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-You can also build with Make, using `make ENABLE_EMULATOR=1`. This also builds
+The window is included when SDL2 is found. Pass `-DENABLE_EMULATOR_SDL=OFF` to
+build only the headless emulator (render workers, previews, tests), or
+`-DENABLE_EMULATOR_SDL=ON` to fail if SDL2 is missing.
+
+You can also build with Make, using `make ENABLE_EMULATOR=1`
+(`ENABLE_EMULATOR_SDL=0` leaves out the window). This also builds
 `examples/emulator-demo`, which you can run with:
 
 ```
@@ -80,12 +87,14 @@ error, while `--led-emulator-*` flags are still accepted.
 emulator, and `matrix->AsEmulator()` gives the `EmulatorMatrix` or `nullptr` for
 a hardware matrix, so no cast is needed.
 
-#### Building on Windows (headless emulator)
+#### Building on Windows (emulator only)
 
-Native Windows builds support only the headless emulator, and configuring
-without `-DENABLE_EMULATOR=ON` fails. They provide `Canvas`, `FrameCanvas`,
-`EmulatorMatrix`, graphics/font, and content-streaming APIs without GPIO or
-SDL. They are meant for desktop render workers, previews and tests.
+Native Windows builds have no hardware backend, and configuring without
+`-DENABLE_EMULATOR=ON` fails. They use the same emulator core as Linux and
+provide `Canvas`, `FrameCanvas`, `EmulatorMatrix`, graphics/font, and
+content-streaming APIs without GPIO. They are headless by default and meant for
+desktop render workers, previews and tests; `-DENABLE_EMULATOR_SDL=ON` adds the
+SDL2 window.
 
 ```powershell
 cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
@@ -171,7 +180,8 @@ in `cmake/triplets/`.
 
 Option            | Default | Description
 :---------------- | :------ | :-----------
-`ENABLE_EMULATOR` | `OFF`   | Build the emulator. Requires SDL2 on Linux; required on Windows.
+`ENABLE_EMULATOR` | `OFF`   | Build the emulator core (no dependencies). Required on Windows.
+`ENABLE_EMULATOR_SDL` | `ON` if SDL2 is found (not on Windows) | Add the SDL2 emulator window.
 `BUILD_TESTS`     | `OFF`   | Build the regression, streaming and emulator tests (run with `ctest`).
 
 #### Using the library from your own CMake project
@@ -254,13 +264,13 @@ Flag                                  | Description
 `--led-emulator-title=<title>`        | Window title.
 `--led-emulator-refresh=<hz>`         | Refresh rate that swaps are paced to (default 60).
 `--led-emulator-hardware-timing`      | Pace swaps even when headless.
-`--led-emulator-headless`             | No window. Always on for Windows builds.
+`--led-emulator-headless`             | No window. The default in builds without the SDL window, where `--led-emulator-no-headless` warns and runs headless.
 `--led-emulator-frame-export=<path>`  | Write each shown frame to `<path>`.
 
 The frame export file holds the width and height as two native-endian `uint32`
 values, followed by `width * height` RGB888 pixels in row-major order, with
-brightness applied. The Windows backend writes to `<path>.tmp` and then renames
-it, so readers never see a half-written frame.
+brightness applied. The emulator writes to `<path>.tmp` and then renames it, so
+readers never see a half-written frame.
 
 The emulator does not apply pixel mappers or GPIO-specific options, such as
 `--led-slowdown-gpio`. The canvas size is `cols * chain_length` by

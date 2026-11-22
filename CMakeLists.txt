@@ -6,6 +6,22 @@ include(GNUInstallDirs)
 
 option(ENABLE_EMULATOR "Enable LED matrix emulator functionality" OFF)
 
+# The emulator core needs no dependencies. ENABLE_EMULATOR_SDL adds the SDL2
+# window; by default it is on (outside Windows) when SDL2 is found.
+if(ENABLE_EMULATOR AND NOT DEFINED ENABLE_EMULATOR_SDL)
+    set(_rpi_rgb_led_matrix_sdl_default OFF)
+    if(NOT WIN32)
+        find_package(SDL2 CONFIG QUIET)
+        if(SDL2_FOUND)
+            set(_rpi_rgb_led_matrix_sdl_default ON)
+        endif()
+    endif()
+    option(ENABLE_EMULATOR_SDL "Add the SDL2 window to the emulator" ${_rpi_rgb_led_matrix_sdl_default})
+endif()
+if(NOT ENABLE_EMULATOR)
+    set(ENABLE_EMULATOR_SDL OFF)
+endif()
+
 set(MATRIX_HARDWARE_SOURCES
     lib/gpio.cc
     lib/led-matrix.cc
@@ -37,18 +53,23 @@ if(WIN32)
     if(NOT ENABLE_EMULATOR)
         message(FATAL_ERROR "Native Windows builds support the emulator backend only; configure with -DENABLE_EMULATOR=ON")
     endif()
-    set(MATRIX_SOURCES ${MATRIX_PORTABLE_SOURCES} lib/emulator-headless.cc lib/emulator-flags.cc)
-    message(STATUS "Building portable headless emulator support for Windows")
+    set(MATRIX_SOURCES ${MATRIX_PORTABLE_SOURCES} lib/emulator-portable-options.cc
+        lib/emulator-flags.cc lib/emulator-core.cc)
 else()
     set(MATRIX_SOURCES ${MATRIX_HARDWARE_SOURCES} ${MATRIX_PORTABLE_SOURCES} lib/emulator-flags.cc)
     if(ENABLE_EMULATOR)
-        list(APPEND MATRIX_SOURCES lib/emulator.cc)
-        message(STATUS "Building with SDL emulator support")
+        list(APPEND MATRIX_SOURCES lib/emulator-core.cc)
     else()
         # Same emulator API, but EmulatorMatrix::Create() returns nullptr.
         list(APPEND MATRIX_SOURCES lib/emulator-unsupported.cc)
         message(STATUS "Building without emulator support")
     endif()
+endif()
+if(ENABLE_EMULATOR_SDL)
+    list(APPEND MATRIX_SOURCES lib/emulator-sdl.cc)
+    message(STATUS "Building the emulator with the SDL window")
+elseif(ENABLE_EMULATOR)
+    message(STATUS "Building the headless emulator (no SDL window)")
 endif()
 
 add_library(rpi-rgb-led-matrix SHARED ${MATRIX_SOURCES})
@@ -62,14 +83,15 @@ endif()
 set(RPI_RGB_LED_MATRIX_NEEDS_SDL OFF)
 if(ENABLE_EMULATOR)
     target_compile_definitions(rpi-rgb-led-matrix PUBLIC ENABLE_EMULATOR)
-    if(NOT WIN32)
-        set(RPI_RGB_LED_MATRIX_NEEDS_SDL ON)
-        find_package(SDL2 CONFIG REQUIRED)
-        target_link_libraries(rpi-rgb-led-matrix PRIVATE
-            $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-        )
-    endif()
+endif()
+if(ENABLE_EMULATOR_SDL)
+    set(RPI_RGB_LED_MATRIX_NEEDS_SDL ON)
+    find_package(SDL2 CONFIG REQUIRED)
+    target_compile_definitions(rpi-rgb-led-matrix PRIVATE ENABLE_EMULATOR_SDL)
+    target_link_libraries(rpi-rgb-led-matrix PRIVATE
+        $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+        $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    )
 endif()
 
 # Include directories
@@ -120,12 +142,14 @@ if(ENABLE_EMULATOR AND BUILD_TESTS)
     enable_testing()
     add_executable(emulator-lifecycle-test examples/emulator-lifecycle-test.cc)
     target_link_libraries(emulator-lifecycle-test PRIVATE rpi-rgb-led-matrix)
-    if(NOT WIN32)
+    if(ENABLE_EMULATOR_SDL)
+        # The test checks that headless emulators never initialize SDL.
+        target_compile_definitions(emulator-lifecycle-test PRIVATE EMULATOR_TEST_HAS_SDL)
         target_link_libraries(emulator-lifecycle-test PRIVATE
             $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
     endif()
     add_test(NAME emulator-lifecycle-test COMMAND emulator-lifecycle-test)
-    if(NOT WIN32)
+    if(ENABLE_EMULATOR_SDL)
         add_test(NAME emulator-display-failure COMMAND emulator-lifecycle-test display-failure)
         set_tests_properties(emulator-display-failure PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
     endif()

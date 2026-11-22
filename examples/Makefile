@@ -15,7 +15,10 @@ LDLIBS = -lrgbmatrix -lrt -lm -lpthread
 # Check if ENABLE_EMULATOR is defined
 ifdef ENABLE_EMULATOR
 CFLAGS += -DENABLE_EMULATOR
+ENABLE_EMULATOR_SDL?=1
+ifeq ($(ENABLE_EMULATOR_SDL), 1)
 LDLIBS += -lSDL2
+endif
 EMULATOR_TARGETS = emulator-demo
 EMULATOR_OBJECTS = emulator-demo.o
 EMULATOR_DESC = --led-emulator-scale=12 --led-emulator-refresh=60
