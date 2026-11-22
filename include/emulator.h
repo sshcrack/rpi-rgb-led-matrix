@@ -19,8 +19,11 @@
 #include "led-matrix.h"
 #include <string>
 
-// Only define emulator functionality if ENABLE_EMULATOR is set
-#ifdef ENABLE_EMULATOR
+// This header is the same in every build. In a library built without
+// emulator support (ENABLE_EMULATOR), EmulatorMatrix::Create() returns
+// nullptr, so a program can use this API unconditionally and check at runtime.
+// ENABLE_EMULATOR is still defined for CMake consumers when the library
+// supports the emulator; EmulatorMatrix::Supported() tells at runtime.
 
 namespace rgb_matrix {
 
@@ -56,12 +59,19 @@ struct EmulatorOptions {
 // in a window rather than requiring physical GPIO hardware
 class EmulatorMatrix : public RGBMatrixBase {
 public:
-  // Create a new EmulatorMatrix with the given options
+  // True if this library was built with emulator support.
+  static bool Supported();
+
+  // Create a new EmulatorMatrix with the given options. Returns nullptr if
+  // the options are invalid, the window can't be opened, or the library was
+  // built without emulator support.
   static EmulatorMatrix *Create(const RGBMatrix::Options &options,
                                 const EmulatorOptions &emulator_options);
   
   // Destructor
   virtual ~EmulatorMatrix();
+
+  EmulatorMatrix *AsEmulator() override { return this; }
   
   // Canvas interface implementation
   virtual int width() const;
@@ -122,5 +132,4 @@ void PrintEmulatorFlags(FILE *out, const EmulatorOptions &defaults = EmulatorOpt
 
 }  // namespace rgb_matrix
 
-#endif // ENABLE_EMULATOR
 #endif  // RPI_RGBMATRIX_EMULATOR_H

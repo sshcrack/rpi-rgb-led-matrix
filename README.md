@@ -72,6 +72,14 @@ A build with `ENABLE_EMULATOR=ON` still contains the hardware backend. A program
 only uses the emulator when `--led-emulator` is passed or
 `MatrixFactory::Options::use_emulator` is set.
 
+The headers are the same with and without `ENABLE_EMULATOR`, so programs need no
+`#ifdef` to use the emulator API. Against a library built without the emulator,
+`EmulatorMatrix::Create()` returns `nullptr` and `--led-emulator` fails with an
+error, while `--led-emulator-*` flags are still accepted.
+`EmulatorMatrix::Supported()` tells at runtime whether the library has the
+emulator, and `matrix->AsEmulator()` gives the `EmulatorMatrix` or `nullptr` for
+a hardware matrix, so no cast is needed.
+
 #### Building on Windows (headless emulator)
 
 Native Windows builds support only the headless emulator, and configuring
@@ -177,7 +185,9 @@ target_link_libraries(my-app PRIVATE rpi_rgb_led_matrix::rpi-rgb-led-matrix)
 
 The package also sets `RPI_RGB_LED_MATRIX_FONTS_DIR` to the installed
 `fonts/` directory. If the library was built with the SDL emulator, the package
-looks up SDL2 for you, and `ENABLE_EMULATOR` is defined for consumers.
+looks up SDL2 for you, and `ENABLE_EMULATOR` is defined for consumers. That
+define only tells whether the emulator is supported; the headers don't depend on
+it.
 
 #### Using the emulator in code
 

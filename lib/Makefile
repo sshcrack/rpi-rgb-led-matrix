@@ -9,7 +9,8 @@ OBJECTS=gpio.o led-matrix.o frame-canvas.o options-initialize.o framebuffer.o \
 	matrix-factory.o thread.o bdf-font.o graphics.o led-matrix-c.o hardware-mapping.o \
 	pixel-mapper.o multiplex-mappers.o frame-sequence.o \
 	content-streamer.o content-streamer-c.o frame-sequence-c.o \
-	rp1/rp1_pio_backend.o rp1/rp1_pio_support.o rp1/rp1_rio_backend.o refresh-timing.o
+	rp1/rp1_pio_backend.o rp1/rp1_pio_support.o rp1/rp1_rio_backend.o refresh-timing.o \
+	emulator-flags.o
 
 TARGET=librgbmatrix
 
@@ -220,12 +221,15 @@ ENABLE_EMULATOR?=0
 # Additional flags for emulator when enabled
 ifeq ($(ENABLE_EMULATOR), 1)
   CXXFLAGS+=-DENABLE_EMULATOR
-  OBJECTS+=emulator.o emulator-flags.o
+  OBJECTS+=emulator.o
   # SDL2 flags, use sdl2-config tool to find them
   SDL2_CFLAGS=$(shell sdl2-config --cflags)
   SDL2_LDFLAGS=$(shell sdl2-config --libs)
   CXXFLAGS+=$(SDL2_CFLAGS)
   LDFLAGS+=$(SDL2_LDFLAGS)
+else
+  # Same emulator API, but EmulatorMatrix::Create() returns nullptr.
+  OBJECTS+=emulator-unsupported.o
 endif
 
 # Where our library resides. It is split between includes and the binary

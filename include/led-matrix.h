@@ -39,6 +39,7 @@
 
 namespace rgb_matrix {
 class RGBMatrix;
+class EmulatorMatrix;
 class FrameCanvas;   // Canvas for Double- and Multibuffering
 struct RuntimeOptions;
 
@@ -57,6 +58,10 @@ public:
   virtual void set_luminance_correct(bool on) = 0;
   virtual bool luminance_correct() const = 0;
   virtual bool StartRefresh() = 0;
+
+  // Returns this matrix as an EmulatorMatrix (see emulator.h), or nullptr
+  // for a hardware matrix. Use it instead of casting.
+  virtual EmulatorMatrix *AsEmulator() { return nullptr; }
 };
 
 // The RGB matrix provides the framebuffer and the facilities to constantly

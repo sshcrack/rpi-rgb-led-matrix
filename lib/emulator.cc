@@ -582,6 +582,8 @@ EmulatorMatrix::~EmulatorMatrix() {
   delete impl_;
 }
 
+bool EmulatorMatrix::Supported() { return true; }
+
 // Factory method to create a new emulator
 EmulatorMatrix* EmulatorMatrix::Create(const RGBMatrix::Options& options,
                                        const EmulatorOptions& emulator_options) {

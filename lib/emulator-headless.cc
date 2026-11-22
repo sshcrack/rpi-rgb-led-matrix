@@ -217,6 +217,8 @@ EmulatorMatrix::~EmulatorMatrix() {
   delete impl_;
 }
 
+bool EmulatorMatrix::Supported() { return true; }
+
 EmulatorMatrix *EmulatorMatrix::Create(const RGBMatrix::Options &options,
                                        const EmulatorOptions &emulator_options) {
   std::string error;
