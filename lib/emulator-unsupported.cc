@@ -58,5 +58,6 @@ void EmulatorMatrix::set_luminance_correct(bool) {}
 bool EmulatorMatrix::luminance_correct() const { return false; }
 bool EmulatorMatrix::StartRefresh() { return false; }
 void EmulatorMatrix::Render() {}
+void EmulatorMatrix::SetFrameCallback(FrameCallback) {}
 
 }  // namespace rgb_matrix
