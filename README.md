@@ -19,13 +19,15 @@ that adds the following to the upstream library:
     interface as the hardware `RGBMatrix`, so you can develop and test on a
     desktop without a Raspberry Pi or panels. One portable core runs on Linux
     and Windows; it can show frames in an optional SDL2 window, write them to a
-    file, or run headless.
+    file, hand them to a callback, or run headless. It applies pixel mappers, so
+    the canvas matches the real panel (see
+    [Using the emulator in code](#using-the-emulator-in-code)).
   * **`MatrixFactory`**, which picks hardware or emulator at runtime from the
     `--led-emulator` command line flag.
   * **A CMake build** that produces a shared library and installs a CMake
     package (`find_package(rpi-rgb-led-matrix)`). It works with vcpkg.
-  * **Bulk RGB frame writes** and faster framebuffer readback (see
-    [below](#bulk-rgb-frame-writes)).
+  * **Bulk RGB frame writes and reads** (`SetRGB()`, `GetRGB()`; see
+    [below](#bulk-rgb-frame-writes-and-reads)).
   * `ContentStreamer` additions, such as peeking at the next frame.
   * **A [cross-compilation guide](#cross-compiling-for-the-raspberry-pi)** for
     building on a desktop and running on the Pi.
@@ -296,14 +298,14 @@ the chained panels instead. The emulator doesn't emulate multiplexing, which
 only describes panel wiring, or GPIO-specific options such as
 `--led-slowdown-gpio`.
 
-## Bulk RGB frame writes
+## Bulk RGB frame writes and reads
 
 `FrameCanvas::SetRGB(x, y, width, height, rgb)` accepts packed, row-major RGB888
 bytes (`width * height * 3` bytes). Full-canvas writes use a grouped GPIO bitplane
 converter; partial or clipped rectangles retain the scalar clipping behavior.
 `SetPixels()` uses the same fast path for `Color` arrays. Source data is consumed
-synchronously and can be reused after the call returns. Both emulator backends
-preserve their software framebuffer behavior.
+synchronously and can be reused after the call returns. The emulator writes
+straight into its software framebuffer.
 
 The conversion retains brightness, CIE1931 correction, RGB ordering, inverse
 colors, PWM depth, pixel mappers and aliased-pixel ordering. Hardware `GetPixel()`
