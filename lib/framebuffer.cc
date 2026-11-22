@@ -1196,6 +1196,50 @@ bool Framebuffer::GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) con
   return true;
 }
 
+void Framebuffer::GetRGB(int x, int y, int w, int h, uint8_t *rgb) const {
+  if (!rgb) return;
+  if (x != 0 || y != 0 || w != width() || h != height()) {
+    for (int row = 0; row < h; ++row)
+      for (int col = 0; col < w; ++col) {
+        uint8_t *p = rgb + (size_t(row) * w + col) * 3;
+        if (!Framebuffer::GetPixel(x + col, y + row, &p[0], &p[1], &p[2]))
+          p[0] = p[1] = p[2] = 0;
+      }
+    return;
+  }
+  // Full canvas: like SetRGB(), visit pixels grouped by GPIO word, so each
+  // word's bit planes are read once for all pixels sharing it, and build the
+  // inverse color lookup once instead of per pixel. Unused pixels stay black.
+  memset(rgb, 0, size_t(w) * h * 3);
+  const uint8_t *lookup = InverseLookup(brightness_, do_luminance_correct_);
+  const int first = kBitPlanes - pwm_bits_;
+  const uint16_t invert = inverse_color_
+    ? (((1U << kBitPlanes) - 1) & ~((1U << first) - 1)) : 0;
+  const auto *map = *shared_mapper_;
+  const auto &groups = map->bulk_groups();
+  const auto &order = map->bulk_order();
+  for (const auto &group : groups) {
+    gpio_bits_t planes[kBitPlanes];
+    const gpio_bits_t *in = bitplane_buffer_ + group.word + columns_ * first;
+    for (int bit = first; bit < kBitPlanes; ++bit, in += columns_) planes[bit] = *in;
+    for (size_t i = group.begin; i < group.end; ++i) {
+      const int index = order[i];
+      const auto &d = map->at_index(index);
+      uint16_t red = 0, green = 0, blue = 0;
+      for (int bit = first; bit < kBitPlanes; ++bit) {
+        const gpio_bits_t plane = planes[bit];
+        red |= uint16_t((plane & d.r_bit) != 0) << bit;
+        green |= uint16_t((plane & d.g_bit) != 0) << bit;
+        blue |= uint16_t((plane & d.b_bit) != 0) << bit;
+      }
+      uint8_t *p = rgb + size_t(index) * 3;
+      p[0] = lookup[red ^ invert];
+      p[1] = lookup[green ^ invert];
+      p[2] = lookup[blue ^ invert];
+    }
+  }
+}
+
 }  // namespace internal
 }  // namespace rgb_matrix
 namespace rgb_matrix {

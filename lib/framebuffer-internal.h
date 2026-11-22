@@ -142,6 +142,7 @@ public:
   void SetRGB(int x, int y, int width, int height, const uint8_t *rgb) override;
   void SetPixels(int x, int y, int width, int height, Color *colors) override;
   bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const override;
+  void GetRGB(int x, int y, int width, int height, uint8_t *rgb) const override;
   void Clear() override;
   void Fill(uint8_t red, uint8_t green, uint8_t blue) override;
   void SubFill(int x, int y, int width, int height, uint8_t red, uint8_t green, uint8_t blue) override;

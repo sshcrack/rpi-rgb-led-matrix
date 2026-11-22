@@ -165,6 +165,26 @@ public:
     return true;
   }
 
+  void GetRGB(int x, int y, int w, int h, uint8_t *rgb) const override {
+    if (!rgb) return;
+    if (geometry_->identity() && x == 0 && w == geometry_->width && y >= 0 &&
+        h <= geometry_->height - y) {
+      // Whole rows without a mapper are stored exactly as returned.
+      std::memcpy(rgb, &pixels_[static_cast<size_t>(y) * w * 3U], static_cast<size_t>(w) * h * 3U);
+      return;
+    }
+    for (int row = 0; row < h; ++row) {
+      for (int col = 0; col < w; ++col) {
+        uint8_t *out = rgb + (static_cast<size_t>(row) * w + col) * 3U;
+        const int index = geometry_->PhysicalIndex(x + col, y + row);
+        const uint8_t *pixel = index < 0 ? kBlack : &pixels_[static_cast<size_t>(index) * 3U];
+        out[0] = pixel[0];
+        out[1] = pixel[1];
+        out[2] = pixel[2];
+      }
+    }
+  }
+
   void Clear() override {
     ++generation_;
     std::fill(pixels_.begin(), pixels_.end(), uint8_t{0});
