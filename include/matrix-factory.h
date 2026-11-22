@@ -16,12 +16,8 @@
 #ifndef RPI_RGBMATRIX_FACTORY_H
 #define RPI_RGBMATRIX_FACTORY_H
 
-#include "led-matrix.h"
-
-// Only include emulator.h when emulator support is enabled
-#ifdef ENABLE_EMULATOR
 #include "emulator.h"
-#endif
+#include "led-matrix.h"
 
 namespace rgb_matrix {
 
@@ -42,10 +38,9 @@ public:
     // Runtime options specific to the hardware matrix
     RuntimeOptions runtime_options;
     
-#ifdef ENABLE_EMULATOR
-    // Options specific to the emulator
+    // Options specific to the emulator. Present in every build; ignored by
+    // libraries built without emulator support.
     EmulatorOptions emulator_options;
-#endif
   };
   
   // Updated to return RGBMatrixBase instead of Canvas

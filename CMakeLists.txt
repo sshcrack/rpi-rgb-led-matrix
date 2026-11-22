@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rpi-rgb-led-matrix VERSION 0.1.16 LANGUAGES C CXX)
+project(rpi-rgb-led-matrix VERSION 0.1.17 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
@@ -40,11 +40,13 @@ if(WIN32)
     set(MATRIX_SOURCES ${MATRIX_PORTABLE_SOURCES} lib/emulator-headless.cc lib/emulator-flags.cc)
     message(STATUS "Building portable headless emulator support for Windows")
 else()
-    set(MATRIX_SOURCES ${MATRIX_HARDWARE_SOURCES} ${MATRIX_PORTABLE_SOURCES})
+    set(MATRIX_SOURCES ${MATRIX_HARDWARE_SOURCES} ${MATRIX_PORTABLE_SOURCES} lib/emulator-flags.cc)
     if(ENABLE_EMULATOR)
-        list(APPEND MATRIX_SOURCES lib/emulator.cc lib/emulator-flags.cc)
+        list(APPEND MATRIX_SOURCES lib/emulator.cc)
         message(STATUS "Building with SDL emulator support")
     else()
+        # Same emulator API, but EmulatorMatrix::Create() returns nullptr.
+        list(APPEND MATRIX_SOURCES lib/emulator-unsupported.cc)
         message(STATUS "Building without emulator support")
     endif()
 endif()
@@ -104,6 +106,14 @@ if(BUILD_TESTS)
     target_link_libraries(content-streamer-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME content-streamer-repeat-peek COMMAND content-streamer-test repeat-peek)
     add_test(NAME content-streamer-consume-peek COMMAND content-streamer-test consume-peek)
+    if(NOT WIN32)
+        # Compiled without ENABLE_EMULATOR against either library build, to
+        # check the emulator headers don't depend on the define.
+        add_executable(emulator-api-test examples/emulator-api-test.cc)
+        target_link_libraries(emulator-api-test PRIVATE rpi-rgb-led-matrix)
+        target_compile_options(emulator-api-test PRIVATE -UENABLE_EMULATOR)
+        add_test(NAME emulator-api-test COMMAND emulator-api-test)
+    endif()
 endif()
 
 if(ENABLE_EMULATOR AND BUILD_TESTS)

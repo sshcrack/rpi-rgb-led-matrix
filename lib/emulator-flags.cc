@@ -14,10 +14,10 @@
 // along with this program.  If not, see <http://gnu.org/licenses/gpl-2.0.txt>
 
 // Command line flag handling shared by the SDL and the headless emulator.
+// Built in every configuration, so --led-emulator-* flags are accepted (and
+// checked) even by libraries without emulator support.
 
 #include "emulator.h"
-
-#ifdef ENABLE_EMULATOR
 
 #include <climits>
 #include <cstdio>
@@ -140,5 +140,3 @@ void PrintEmulatorFlags(FILE *out, const EmulatorOptions &defaults) {
 }
 
 }  // namespace rgb_matrix
-
-#endif  // ENABLE_EMULATOR

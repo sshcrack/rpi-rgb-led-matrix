@@ -30,10 +30,9 @@ namespace rgb_matrix
     {
         RGBMatrixBase *result = nullptr;
 
-#ifdef ENABLE_EMULATOR
         if (options.use_emulator)
         {
-            // Create an emulator
+            // Create an emulator (nullptr without emulator support)
             result = EmulatorMatrix::Create(options.led_options, options.emulator_options);
         }
         else
@@ -41,10 +40,6 @@ namespace rgb_matrix
             // Create a real hardware matrix
             result = RGBMatrix::CreateFromOptions(options.led_options, options.runtime_options);
         }
-#else
-        result = RGBMatrix::CreateFromOptions(options.led_options, options.runtime_options);
-
-#endif
 
         return result;
     }
@@ -84,18 +79,16 @@ namespace rgb_matrix
             *argc = kept;
         }
 
-#ifdef ENABLE_EMULATOR
         // Always consume the --led-emulator-* flags so they are accepted (and
-        // checked for typos) even when running on hardware.
+        // checked for typos) even when running on hardware or in a build
+        // without emulator support.
         if (!rgb_matrix::ParseEmulatorOptionsFromFlags(argc, argv, &options->emulator_options, remove_consumed_flags))
             return false;
-#else
-        if (options->use_emulator)
+        if (options->use_emulator && !EmulatorMatrix::Supported())
         {
-            fprintf(stderr, "--led-emulator given, but this program was built without emulator support (ENABLE_EMULATOR).\n");
+            fprintf(stderr, "--led-emulator given, but the rgbmatrix library was built without emulator support (ENABLE_EMULATOR).\n");
             return false;
         }
-#endif
 
         // Core --led-* flags apply to hardware and emulator alike.
         return rgb_matrix::ParseOptionsFromFlags(argc, argv, &options->led_options,
@@ -106,20 +99,21 @@ namespace rgb_matrix
     void MatrixFactory::PrintMatrixFactoryFlags(FILE *out, const MatrixFactory::Options &defaults)
     {
         fprintf(out, "The following flags are available for RGB matrix configuration:\n");
-        fprintf(out, "General matrix selection:\n");
-
-#ifdef ENABLE_EMULATOR
-        fprintf(out, "\t--led-emulator          : Use emulator instead of actual hardware (Default: %s)\n\n",
-                defaults.use_emulator ? "on" : "off");
-#endif
+        if (EmulatorMatrix::Supported())
+        {
+            fprintf(out, "General matrix selection:\n");
+            fprintf(out, "\t--led-emulator          : Use emulator instead of actual hardware (Default: %s)\n\n",
+                    defaults.use_emulator ? "on" : "off");
+        }
         // Print both sets of options
         fprintf(out, "Hardware matrix options:\n");
         rgb_matrix::PrintMatrixFlags(out, defaults.led_options, defaults.runtime_options);
 
-#ifdef ENABLE_EMULATOR
-        fprintf(out, "\nEmulator options:\n");
-        rgb_matrix::PrintEmulatorFlags(out, defaults.emulator_options);
-#endif
+        if (EmulatorMatrix::Supported())
+        {
+            fprintf(out, "\nEmulator options:\n");
+            rgb_matrix::PrintEmulatorFlags(out, defaults.emulator_options);
+        }
     }
 
 } // namespace rgb_matrix
