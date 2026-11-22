@@ -208,18 +208,28 @@ int main(int argc, char *argv[]) {
     DrawCircle(offscreen, frame % offscreen->width(), offscreen->height() / 2,
                8, Color(255, 0, 0));
     offscreen = matrix->SwapOnVSync(offscreen);
-#ifdef ENABLE_EMULATOR
-    // The emulator has no refresh thread. Call Render() after each swap to
-    // draw the window and/or write the frame export file.
-    if (auto *emulator = dynamic_cast<EmulatorMatrix *>(matrix))
-      emulator->Render();
-#endif
   }
   delete matrix;
 }
 ```
 
-Run it on hardware as usual, or pass `--led-emulator` to use the emulator. The
+Run it on hardware as usual, or pass `--led-emulator` to use the emulator. No
+emulator-specific code is needed: the emulator has no refresh thread, so
+`SwapOnVSync()` shows each frame on the calling thread (window and/or frame
+export). With a window it also blocks until the next refresh, like hardware, at
+`--led-emulator-refresh` Hz divided by `framerate_fraction`. Headless emulators
+don't wait, so render workers run at full speed. Pass
+`--led-emulator-hardware-timing` to pace them too.
+
+On hardware, writes to the displayed canvas (through `matrix->SetPixel()` or
+the `FrameCanvas` pointer of the displayed canvas) show up on the next refresh by
+themselves. The emulator has no refresh thread, so they show up on the next
+`SwapOnVSync()` (`SwapOnVSync(nullptr)` keeps the displayed canvas) or
+`EmulatorMatrix::Render()` call. `Render()` shows the current frame without
+swapping or waiting. It does nothing if that frame is already shown, so calling
+it after a swap is harmless.
+
+The
 emulator takes these extra flags. Like the other `--led-*` flags, value flags
 accept both `--flag=value` and `--flag value`, and boolean flags can be negated
 with `no-` (e.g. `--led-emulator-no-headless`). The `--led-emulator-*` flags are
@@ -232,10 +242,10 @@ Flag                                  | Description
 `--led-emulator`                      | Use the emulator instead of GPIO hardware (`--led-no-emulator` turns it off again).
 `--led-emulator-scale=<n>`            | Window scale factor (default 10).
 `--led-emulator-title=<title>`        | Window title.
-`--led-emulator-refresh=<hz>`         | Display refresh rate (default 60).
-`--led-emulator-hardware-timing`      | Emulate hardware timing.
+`--led-emulator-refresh=<hz>`         | Refresh rate that swaps are paced to (default 60).
+`--led-emulator-hardware-timing`      | Pace swaps even when headless.
 `--led-emulator-headless`             | No window. Always on for Windows builds.
-`--led-emulator-frame-export=<path>`  | On each `Render()`, write the current frame to `<path>`.
+`--led-emulator-frame-export=<path>`  | Write each shown frame to `<path>`.
 
 The frame export file holds the width and height as two native-endian `uint32`
 values, followed by `width * height` RGB888 pixels in row-major order, with
