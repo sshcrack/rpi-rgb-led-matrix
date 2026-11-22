@@ -129,9 +129,9 @@ void PrintEmulatorFlags(FILE *out, const EmulatorOptions &defaults) {
   fprintf(out,
           "\t--led-emulator-scale=<scale>         : Window scale factor (Default: %d)\n"
           "\t--led-emulator-title=<title>         : Window title (Default: %s)\n"
-          "\t--led-emulator-refresh=<hz>          : Display refresh rate Hz (Default: %d)\n"
-          "\t--led-emulator-hardware-timing       : Emulate hardware timing (Default: %s)\n"
-          "\t--led-emulator-frame-export=<path>   : Write each rendered frame as raw RGB binary to path (Default: none)\n"
+          "\t--led-emulator-refresh=<hz>          : Refresh rate Hz that swaps are paced to (Default: %d)\n"
+          "\t--led-emulator-hardware-timing       : Pace swaps even when headless (Default: %s)\n"
+          "\t--led-emulator-frame-export=<path>   : Write each shown frame as raw RGB binary to path (Default: none)\n"
           "\t--led-emulator-headless              : Run without a visible window (Default: %s)\n",
           defaults.display_scale, defaults.window_title.c_str(),
           defaults.refresh_rate_hz,

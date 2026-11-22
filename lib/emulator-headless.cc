@@ -2,6 +2,7 @@
 
 #ifdef ENABLE_EMULATOR
 
+#include "emulator-frame-pacer.h"
 #include "framebuffer-interface.h"
 
 #include <algorithm>
@@ -26,6 +27,7 @@ public:
 
   void SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) override {
     if (x < 0 || x >= width_ || y < 0 || y >= height_) return;
+    ++generation_;
     const size_t offset = static_cast<size_t>(y * width_ + x) * 3U;
     pixels_[offset] = r;
     pixels_[offset + 1] = g;
@@ -41,9 +43,13 @@ public:
     return true;
   }
 
-  void Clear() override { std::fill(pixels_.begin(), pixels_.end(), uint8_t{0}); }
+  void Clear() override {
+    ++generation_;
+    std::fill(pixels_.begin(), pixels_.end(), uint8_t{0});
+  }
 
   void Fill(uint8_t r, uint8_t g, uint8_t b) override {
+    ++generation_;
     for (size_t i = 0; i < pixels_.size(); i += 3) {
       pixels_[i] = r;
       pixels_[i + 1] = g;
@@ -71,6 +77,7 @@ public:
 
   bool Deserialize(const char *data, size_t len) override {
     if (!data || len != pixels_.size()) return false;
+    ++generation_;
     std::memcpy(pixels_.data(), data, len);
     return true;
   }
@@ -83,6 +90,10 @@ public:
     Deserialize(data, len);
   }
 
+  // Bumped on every pixel write, so Render() can tell whether the content
+  // changed since it was last drawn.
+  uint64_t generation() const { return generation_; }
+
 private:
   int width_;
   int height_;
@@ -90,6 +101,7 @@ private:
   uint8_t brightness_ = 100;
   uint8_t pwm_bits_ = 8;
   bool luminance_correct_ = false;
+  uint64_t generation_ = 0;
 };
 
 }  // namespace internal
@@ -149,7 +161,17 @@ public:
         height(std::max(1, options.rows * options.parallel)),
         brightness(std::max(1, std::min(100, options.brightness))),
         pwm_bits(std::max(1, std::min(11, options.pwm_bits))),
-        emulator_options(emulator_options) {}
+        emulator_options(emulator_options),
+        // Headless render workers run at full speed unless they ask for
+        // hardware timing.
+        pacer(emulator_options.emulate_hardware_timing, emulator_options.refresh_rate_hz) {}
+
+  // Writes the active frame unless that exact content was already written.
+  void Draw(FrameCanvas *canvas, uint64_t generation) {
+    if (drawn.Matches(canvas, generation, brightness)) return;
+    ExportFrame();
+    drawn.Set(canvas, generation, brightness);
+  }
 
   void ExportFrame() const {
     if (emulator_options.frame_export_path.empty() || !active) return;
@@ -183,6 +205,8 @@ public:
   uint8_t pwm_bits;
   bool luminance_correct = false;
   EmulatorOptions emulator_options;
+  internal::EmulatorFramePacer pacer;
+  internal::EmulatorDrawnFrame drawn;
   FrameCanvas *active = nullptr;
   std::vector<FrameCanvas *> canvases;
 };
@@ -228,9 +252,13 @@ FrameCanvas *EmulatorMatrix::CreateFrameCanvas() {
   return canvas;
 }
 
-FrameCanvas *EmulatorMatrix::SwapOnVSync(FrameCanvas *other, unsigned) {
+// Like hardware, blocks until the next (paced) refresh, then shows the new
+// frame by writing the frame export.
+FrameCanvas *EmulatorMatrix::SwapOnVSync(FrameCanvas *other, unsigned framerate_fraction) {
+  impl_->pacer.WaitForVSync(framerate_fraction);
   FrameCanvas *previous = impl_->active;
   if (other) impl_->active = other;
+  Render();
   return previous;
 }
 
@@ -252,8 +280,14 @@ void EmulatorMatrix::set_luminance_correct(bool on) {
   for (auto *canvas : impl_->canvases) canvas->set_luminance_correct(on);
 }
 bool EmulatorMatrix::luminance_correct() const { return impl_->luminance_correct; }
+// There is no refresh thread to start: frames are drawn by SwapOnVSync()
+// and Render() on the caller's thread.
 bool EmulatorMatrix::StartRefresh() { return true; }
-void EmulatorMatrix::Render() { impl_->ExportFrame(); }
+void EmulatorMatrix::Render() {
+  if (!impl_->active) return;
+  auto *framebuffer = static_cast<internal::HeadlessFramebuffer *>(impl_->active->framebuffer());
+  impl_->Draw(impl_->active, framebuffer->generation());
+}
 
 }  // namespace rgb_matrix
 

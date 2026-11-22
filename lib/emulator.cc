@@ -15,6 +15,7 @@
 
 #include "emulator.h"
 #ifdef ENABLE_EMULATOR
+#include "emulator-frame-pacer.h"
 #include "framebuffer-internal.h"  // Add this include for Framebuffer class
 #include <SDL2/SDL.h>
 #include <assert.h>
@@ -23,13 +24,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <functional>
 #include <iostream>
 #include <mutex>
 #include <string.h>
 #include <string>
 #include <vector>
-#include <thread>
 #include <unistd.h>
 
 namespace rgb_matrix {
@@ -146,9 +145,10 @@ public:
     ExportFrame(brightness);
   }
 
-  void RenderWindow(uint8_t brightness) {
-    if (!IsReady()) return;
-    // Handle SDL events
+  // Handles window events so the window stays responsive. Called on every
+  // swap and Render(), even when there is no new frame to draw.
+  void PumpEvents() {
+    if (headless_ || !IsReady()) return;
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) {
@@ -164,7 +164,12 @@ public:
         }
       }
     }
-    
+  }
+
+  void RenderWindow(uint8_t brightness) {
+    if (!IsReady()) return;
+    PumpEvents();
+
     // Copy pixels to texture with brightness adjustment
     uint8_t *tex_pixels = nullptr;
     int pitch = 0;
@@ -276,15 +281,20 @@ public:
     delete[] pixels_;
   }
   
+  // The base Framebuffer versions of these write GPIO bitplanes; route them
+  // through SetPixel() so they update the emulated pixels.
   void SetRGB(int x, int y, int w, int h, const uint8_t *rgb) override {
     FramebufferInterface::SetRGB(x, y, w, h, rgb);
   }
   void SetPixels(int x, int y, int w, int h, Color *colors) override {
     FramebufferInterface::SetPixels(x, y, w, h, colors);
   }
+  void SubFill(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b) override {
+    FramebufferInterface::SubFill(x, y, w, h, r, g, b);
+  }
   void SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) override {
     if (x < 0 || x >= width_ || y < 0 || y >= height_) return;
-    
+    ++generation_;
     const int pos = y * width_ + x;
     pixels_[pos].r = r;
     pixels_[pos].g = g;
@@ -292,16 +302,22 @@ public:
   }
   
   void Clear() override {
+    ++generation_;
     memset(pixels_, 0, width_ * height_ * sizeof(EmulatedPixel));
   }
   
   void Fill(uint8_t r, uint8_t g, uint8_t b) override {
+    ++generation_;
     for (int i = 0; i < width_ * height_; ++i) {
       pixels_[i].r = r;
       pixels_[i].g = g;
       pixels_[i].b = b;
     }
   }
+
+  // Bumped on every pixel write, so Render() can tell whether the content
+  // changed since it was last drawn.
+  uint64_t generation() const { return generation_; }
   
   // Override the width and height methods to use our local values
   // REVIEW This was a sigfault before overwriting, should probably review this
@@ -345,6 +361,7 @@ public:
   
   bool Deserialize(const char* data, size_t len) override {
     if (len != buffer_size_) return false;
+    ++generation_;
     memcpy(pixels_, data, len);
     return true;
   }
@@ -352,7 +369,7 @@ public:
   void CopyFrom(const FramebufferInterface *other) override {
     const EmulatorFramebuffer* o = dynamic_cast<const EmulatorFramebuffer*>(other);
     if (!o || o == this || o->width_ != width_ || o->height_ != height_) return;
-    
+    ++generation_;
     memcpy(pixels_, o->pixels_, width_ * height_ * sizeof(EmulatedPixel));
   }
   
@@ -388,6 +405,7 @@ private:
   bool do_luminance_correct_;
   EmulatedPixel* pixels_;
   size_t buffer_size_;  // Added buffer size member to track serialized data size
+  uint64_t generation_ = 0;
 };
 } // namespace internal
 
@@ -400,8 +418,10 @@ public:
       brightness_(opts.brightness),
       pwm_bits_(opts.pwm_bits),
       luminance_correct_(false),
-      running_(false),
-      do_vsync_callback_(false) {
+      // A window is paced like a hardware display. Headless render workers
+      // run at full speed unless they ask for hardware timing.
+      pacer_(emulator_opts.emulate_hardware_timing || !emulator_opts.headless,
+             emulator_opts.refresh_rate_hz) {
     
     width_ = opts.cols * opts.chain_length;
     height_ = opts.rows * opts.parallel;
@@ -438,16 +458,15 @@ public:
   }
 
   
+  // Like hardware, blocks until the next (paced) refresh, then shows the
+  // new frame: draws the window and/or writes the frame export.
   FrameCanvas* SwapOnVSync(FrameCanvas* other, unsigned frame_fraction) {
     std::unique_lock<std::mutex> lock(mutex_);
+    pacer_.WaitForVSync(frame_fraction);
     FrameCanvas* previous = active_buffer_;
     if (other) active_buffer_ = other;
+    DrawLocked();
     return previous;
-  }
-  
-  void SetVSyncCallback(std::function<void()> callback) {
-    vsync_callback_ = callback;
-    do_vsync_callback_ = true;
   }
   
   bool ApplyPixelMapper(const PixelMapper* mapper) {
@@ -516,48 +535,24 @@ public:
   
   bool LuminanceCorrect() const { return luminance_correct_; }
   
+  // Draws the active frame unless that exact content is already shown.
   void Render() {
-    if(!display_ || !active_buffer_) return;
-
     std::unique_lock<std::mutex> lock(mutex_);
-    if (active_buffer_) {
-      auto* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(active_buffer_->framebuffer());
-      emulator_fb->Render(display_);
-      display_->Render(brightness_);
-    }
+    DrawLocked();
   }
 private:
-  // Main thread function that updates the display
-  void MatrixThread() {
-    if(true)
+  void DrawLocked() {
+    if (!display_ || !active_buffer_) return;
+    auto* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(active_buffer_->framebuffer());
+    if (drawn_.Matches(active_buffer_, emulator_fb->generation(), brightness_)) {
+      display_->PumpEvents();
       return;
-
-    const int64_t frame_time_us = 1000000 / emulator_options_.refresh_rate_hz;
-    
-    auto next_frame_time = std::chrono::steady_clock::now();
-    
-    while (running_) {
-      // Render the current active buffer
-      {
-        std::unique_lock<std::mutex> lock(mutex_);
-        if (active_buffer_) {
-          auto* emulator_fb = static_cast<internal::EmulatorFramebuffer*>(active_buffer_->framebuffer());
-          emulator_fb->Render(display_);
-          display_->Render(brightness_);
-        }
-      }
-      
-      // Call the vsync callback if registered
-      if (do_vsync_callback_ && vsync_callback_) {
-        vsync_callback_();
-      }
-      
-      // Wait until next frame time
-      next_frame_time += std::chrono::microseconds(frame_time_us);
-      std::this_thread::sleep_until(next_frame_time);
     }
+    emulator_fb->Render(display_);
+    display_->Render(brightness_);
+    drawn_.Set(active_buffer_, emulator_fb->generation(), brightness_);
   }
-  
+
   // Matrix configuration
   const RGBMatrix::Options matrix_options_;
   const EmulatorOptions emulator_options_;
@@ -570,18 +565,13 @@ private:
   uint8_t pwm_bits_;
   bool luminance_correct_;
   
-  // Threading
-  std::thread matrix_thread_;
   std::mutex mutex_;
-  bool running_;
-  
+  internal::EmulatorFramePacer pacer_;
+  internal::EmulatorDrawnFrame drawn_;
+
   // Frame buffer management
   FrameCanvas* active_buffer_ = nullptr;
   std::vector<FrameCanvas*> created_frames_;
-  
-  // VSync callback
-  std::function<void()> vsync_callback_;
-  bool do_vsync_callback_;
 };
 
 // Constructor
@@ -669,6 +659,8 @@ bool EmulatorMatrix::luminance_correct() const {
 }
 
 
+// There is no refresh thread to start: frames are drawn by SwapOnVSync()
+// and Render() on the caller's thread.
 bool EmulatorMatrix::StartRefresh() {
   return true;
 }

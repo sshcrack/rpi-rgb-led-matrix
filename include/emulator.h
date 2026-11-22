@@ -34,11 +34,13 @@ struct EmulatorOptions {
   // Window title (default: "RGB Matrix Emulator")
   std::string window_title;
 
-  // Emulate slowness/hardware timing (default: false)
-  // When true, it will simulate timing issues to match hardware behavior
+  // Pace SwapOnVSync() like hardware even when headless (default: false).
+  // With a window, swaps are always paced. Headless emulators (render
+  // workers, tests) run at full speed unless this is set.
   bool emulate_hardware_timing;
-  
-  // Display refresh rate in Hz (default: 60)
+
+  // Display refresh rate in Hz used for pacing (default: 60). As on hardware,
+  // SwapOnVSync(canvas, n) shows a frame every n refreshes.
   int refresh_rate_hz;
 
   // Path to export each rendered frame as raw binary (width u32, height u32, RGB bytes).
@@ -72,7 +74,10 @@ public:
   // Create a new off-screen canvas
   FrameCanvas *CreateFrameCanvas();
   
-  // Swap the current canvas with the new one on VSync
+  // Make `other` the displayed canvas and show it: draw the window and/or
+  // write the frame export, on the calling thread. When paced (see
+  // EmulatorOptions::emulate_hardware_timing), first blocks until the next
+  // refresh, like hardware. Returns the previously displayed canvas.
   FrameCanvas *SwapOnVSync(FrameCanvas *other, unsigned framerate_fraction = 1);
   
   // Apply pixel mapper to the matrix
@@ -90,8 +95,14 @@ public:
   void set_luminance_correct(bool on);
   bool luminance_correct() const;
   
-  // Start the refresh thread
+  // No-op that returns true: there is no refresh thread, frames are shown
+  // by SwapOnVSync() and Render() on the caller's thread.
   bool StartRefresh();
+
+  // Show the displayed canvas now. Only needed by programs that draw
+  // straight onto the matrix (SetPixel(), Fill(), ...) without swapping.
+  // Does nothing if this exact content was already shown, so calling it
+  // after SwapOnVSync() does not draw a frame twice.
   void Render();
 
 private:

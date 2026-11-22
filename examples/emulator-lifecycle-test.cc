@@ -111,6 +111,87 @@ int main(int argc, char **argv) {
         !Check(frame[0] == 32 && frame[4] == 32 && frame[8] == 25 &&
                frame[9] == 50 && frame[10] == 10, "export geometry and brightness")) return 1;
   }
+  // SwapOnVSync() shows the frame itself; a later Render() only draws again
+  // once the content or brightness changed.
+  {
+    std::unique_ptr<EmulatorMatrix> exported(EmulatorMatrix::Create(options, export_options));
+    if (!Check(bool(exported), "create exporting headless emulator for swaps")) return 1;
+    const auto read_export = [&]() {
+      std::ifstream file(export_options.frame_export_path, std::ios::binary);
+      std::vector<unsigned char> frame((std::istreambuf_iterator<char>(file)), {});
+      file.close();
+      std::remove(export_options.frame_export_path.c_str());
+      return frame;
+    };
+    FrameCanvas *offscreen = exported->CreateFrameCanvas();
+    offscreen->Fill(100, 0, 0);
+    offscreen = exported->SwapOnVSync(offscreen);
+    std::vector<unsigned char> frame = read_export();
+    if (!Check(frame.size() == 8 + 32 * 32 * 3 && frame[8] == 25,
+               "a swap must export the new frame")) return 1;
+    exported->Render();
+    if (!Check(read_export().empty(), "Render() after a swap must not draw the frame again")) return 1;
+    exported->SetPixel(0, 0, 0, 200, 0);
+    exported->Render();
+    frame = read_export();
+    if (!Check(frame.size() == 8 + 32 * 32 * 3 && frame[8] == 0 && frame[9] == 50,
+               "Render() must show direct writes to the matrix")) return 1;
+    exported->SetBrightness(50);
+    exported->Render();
+    frame = read_export();
+    if (!Check(frame.size() == 8 + 32 * 32 * 3 && frame[9] == 100,
+               "Render() must redraw after a brightness change")) return 1;
+    // Writing through the pointer of the displayed canvas shows on the next
+    // Render() or null swap, like a direct write to the matrix.
+    FrameCanvas *displayed = exported->SwapOnVSync(nullptr);
+    read_export();
+    displayed->SetPixel(0, 0, 0, 0, 120);
+    exported->Render();
+    frame = read_export();
+    if (!Check(frame.size() == 8 + 32 * 32 * 3 && frame[10] == 60,
+               "Render() must show writes to the displayed canvas")) return 1;
+    displayed->SetPixel(0, 0, 0, 0, 160);
+    exported->SwapOnVSync(nullptr);
+    frame = read_export();
+    if (!Check(frame.size() == 8 + 32 * 32 * 3 && frame[10] == 80,
+               "a null swap must show writes to the displayed canvas")) return 1;
+    exported->SwapOnVSync(nullptr);
+    if (!Check(read_export().empty(), "an unchanged null swap must not draw again")) return 1;
+    offscreen->SubFill(0, 0, 1, 1, 0, 0, 80);
+    exported->SwapOnVSync(offscreen);
+    frame = read_export();
+    if (!Check(frame.size() == 8 + 32 * 32 * 3 && frame[8] == 0 && frame[9] == 0 && frame[10] == 40,
+               "SubFill() must reach the emulated pixels")) return 1;
+  }
+
+  // Headless swaps run at full speed unless hardware timing is requested;
+  // then they are paced to refresh_rate_hz / framerate_fraction.
+  {
+    using Clock = std::chrono::steady_clock;
+    const auto elapsed_ms = [](Clock::time_point start) {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
+    };
+    EmulatorOptions fast_options = emulator_options;
+    fast_options.refresh_rate_hz = 20;
+    std::unique_ptr<EmulatorMatrix> fast(EmulatorMatrix::Create(options, fast_options));
+    FrameCanvas *offscreen = fast->CreateFrameCanvas();
+    auto start = Clock::now();
+    for (int i = 0; i < 20; ++i) offscreen = fast->SwapOnVSync(offscreen);
+    if (!Check(elapsed_ms(start) < 500, "unpaced headless swaps must not wait")) return 1;
+
+    EmulatorOptions paced_options = emulator_options;
+    paced_options.emulate_hardware_timing = true;
+    paced_options.refresh_rate_hz = 100;
+    std::unique_ptr<EmulatorMatrix> paced(EmulatorMatrix::Create(options, paced_options));
+    offscreen = paced->CreateFrameCanvas();
+    start = Clock::now();
+    for (int i = 0; i < 6; ++i) offscreen = paced->SwapOnVSync(offscreen);
+    if (!Check(elapsed_ms(start) >= 45, "paced swaps must wait for the refresh rate")) return 1;
+    start = Clock::now();
+    for (int i = 0; i < 4; ++i) offscreen = paced->SwapOnVSync(offscreen, 2);
+    if (!Check(elapsed_ms(start) >= 55, "paced swaps must respect framerate_fraction")) return 1;
+  }
+
   matrix->Render();
 #ifndef _WIN32
   if (!Check(SDL_WasInit(SDL_INIT_VIDEO) == 0, "headless mode must not initialize video") ||
