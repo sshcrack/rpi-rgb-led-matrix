@@ -31,4 +31,9 @@ void FrameCanvas::SetRGB(int x, int y, int width, int height, const uint8_t *rgb
   frame_->SetRGB(x, y, width, height, rgb);
 }
 
+void FrameCanvas::GetRGB(int x, int y, int width, int height, uint8_t *rgb) const {
+  if (!rgb || width <= 0 || height <= 0) return;
+  frame_->GetRGB(x, y, width, height, rgb);
+}
+
 }  // namespace rgb_matrix

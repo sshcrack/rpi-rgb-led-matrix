@@ -40,6 +40,16 @@ public:
       }
   }
 
+  // Reads a rectangle as packed RGB888; pixels GetPixel() can't read are
+  // black. Implementations may speed up full-canvas reads.
+  virtual void GetRGB(int x, int y, int width, int height, uint8_t *rgb) const {
+    for (int row = 0; row < height; ++row)
+      for (int col = 0; col < width; ++col) {
+        uint8_t *p = rgb + (size_t(row) * width + col) * 3;
+        if (!GetPixel(x + col, y + row, &p[0], &p[1], &p[2])) p[0] = p[1] = p[2] = 0;
+      }
+  }
+
   virtual void SubFill(int x, int y, int width, int height,
                        uint8_t red, uint8_t green, uint8_t blue) {
     const int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;

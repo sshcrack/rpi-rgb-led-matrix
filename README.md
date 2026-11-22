@@ -310,6 +310,16 @@ colors, PWM depth, pixel mappers and aliased-pixel ordering. Hardware `GetPixel(
 readback lazily builds an exact inverse-color lookup on demand; ordinary writes
 do not build the readback tables or read pixels.
 
+`FrameCanvas::GetRGB(x, y, width, height, rgb)` is the reverse: it writes the
+rectangle as packed RGB888 to `rgb`, with exactly the values `GetPixel()`
+returns; pixels outside the canvas or not mapped to the panel read as black.
+Full-canvas reads decode the bitplanes grouped by GPIO word, like `SetRGB()`,
+and build the inverse lookup once per call. On a Raspberry Pi 3 a full read is
+1.4-3.6x faster than a `GetPixel()` loop (128x64: 2.5 ms -> 1.8 ms; with
+mappers 3.4 ms -> 1.4 ms) and costs about as much as `SetRGB()`. The emulator
+copies its RGB buffer directly. `bulk-readback-test` checks both against a
+`GetPixel()` loop, and `bulk-readback-test bench` prints the timings.
+
 With `BUILD_TESTS=ON`, `bulk-framebuffer-test` compares serialized bitplanes with
 scalar writes across panel layouts, mappings, brightness and color settings. Run
 `./build/bulk-framebuffer-test --benchmark` for isolated full-frame write/readback

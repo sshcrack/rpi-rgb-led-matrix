@@ -425,6 +425,12 @@ public:
   virtual bool GetPixel(int x, int y, uint8_t *red, uint8_t *green, uint8_t *blue) const;
   // Packed, row-major RGB888. Like SetPixels, clipped rectangles are supported.
   void SetRGB(int x, int y, int width, int height, const uint8_t *rgb);
+  // The reverse of SetRGB(): writes the rectangle as packed, row-major RGB888
+  // (width * height * 3 bytes) to `rgb`, with the same values GetPixel()
+  // returns. Pixels outside the canvas or not mapped to the panel read as
+  // black. A full-canvas read decodes the framebuffer in one pass, much
+  // faster than calling GetPixel() for every pixel.
+  void GetRGB(int x, int y, int width, int height, uint8_t *rgb) const;
   virtual void SetPixels(int x, int y, int width, int height,
                          Color *colors);
   virtual void Clear();
