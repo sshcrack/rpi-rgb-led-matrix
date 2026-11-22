@@ -14,15 +14,22 @@
 // along with this program.  If not, see <http://gnu.org/licenses/gpl-2.0.txt>
 
 // The portable emulator core, built on every platform with ENABLE_EMULATOR.
-// It owns the canvases, swapping, pacing and brightness/PWM settings, and
-// hands each shown frame to its outputs (emulator-output.h). It needs no SDL;
-// the SDL window is one optional output.
+// It owns the canvases, swapping, pacing, pixel mappers and brightness/PWM
+// settings, and hands each shown frame to its outputs (emulator-output.h). It
+// needs no SDL; the SDL window is one optional output.
+//
+// Like hardware, canvases store pixels in physical panel layout
+// (cols * chain by rows * parallel). Pixel mappers only change the shared
+// EmulatorGeometry that maps visible canvas coordinates to physical pixels, so
+// width(), height() and coordinates match a hardware matrix with the same
+// options, and content survives a later ApplyPixelMapper() as on hardware.
 
 #include "emulator.h"
 
 #include "emulator-frame-pacer.h"
 #include "emulator-output.h"
 #include "framebuffer-interface.h"
+#include "pixel-mapper.h"
 
 #include <algorithm>
 #include <climits>
@@ -40,7 +47,7 @@ EmulatorOptions::EmulatorOptions()
     : display_scale(10), window_title("RGB Matrix Emulator"),
       emulate_hardware_timing(false), refresh_rate_hz(60), frame_export_path(""),
       // Without the SDL output there is no window to show.
-      headless(!internal::EmulatorHasSdlOutput()) {}
+      headless(!internal::EmulatorHasSdlOutput()), show_physical_layout(false) {}
 
 namespace internal {
 namespace {
@@ -49,31 +56,112 @@ uint8_t ClampBrightness(int value) {
   return static_cast<uint8_t>(std::max(1, std::min(100, value)));
 }
 
-// Software framebuffer holding packed RGB888 pixels.
+// Maps visible canvas coordinates to physical panel pixels. Shared by all
+// canvases of a matrix, like the hardware PixelDesignatorMap.
+class EmulatorGeometry {
+public:
+  EmulatorGeometry(int physical_width, int physical_height)
+      : physical_width(physical_width), physical_height(physical_height),
+        width(physical_width), height(physical_height) {}
+
+  // Index into the physical RGB pixels, or -1 if (x, y) is outside the
+  // canvas or not mapped to any physical pixel.
+  int PhysicalIndex(int x, int y) const {
+    if (x < 0 || y < 0 || x >= width || y >= height) return -1;
+    return map_.empty() ? y * width + x : map_[static_cast<size_t>(y) * width + x];
+  }
+  bool identity() const { return map_.empty(); }
+
+  // Applies a mapper on top of the current mapping, like
+  // RGBMatrix::ApplyPixelMapper(). Returns false if the mapper rejects the
+  // current size.
+  bool Apply(const PixelMapper &mapper) {
+    int new_width = 0, new_height = 0;
+    if (!mapper.GetSizeMapping(width, height, &new_width, &new_height)) return false;
+    if (new_width <= 0 || new_height <= 0 ||
+        static_cast<int64_t>(new_width) * new_height > INT_MAX / 3) {
+      fprintf(stderr, "PixelMapper %s: invalid size %dx%d\n", mapper.GetName(),
+              new_width, new_height);
+      return false;
+    }
+    std::vector<int> next(static_cast<size_t>(new_width) * new_height, -1);
+    bool reported = false;
+    if (mapper.GetMappingType() == PixelMapper::VisibleToMatrix) {
+      for (int y = 0; y < new_height; ++y) {
+        for (int x = 0; x < new_width; ++x) {
+          int matrix_x = -1, matrix_y = -1;
+          mapper.MapVisibleToMatrix(width, height, x, y, &matrix_x, &matrix_y);
+          const int index = PhysicalIndex(matrix_x, matrix_y);
+          if (index < 0 && !reported && (matrix_x < 0 || matrix_y < 0 ||
+                                         matrix_x >= width || matrix_y >= height)) {
+            fprintf(stderr, "Error in PixelMapper %s: (%d, %d) -> (%d, %d) "
+                    "[range: %dx%d]\n", mapper.GetName(), x, y, matrix_x, matrix_y,
+                    width, height);
+            reported = true;
+          }
+          next[static_cast<size_t>(y) * new_width + x] = index;
+        }
+      }
+    } else {
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          int visible_x = -1, visible_y = -1;
+          if (!mapper.MapMatrixToVisible(width, height, x, y, &visible_x, &visible_y)) continue;
+          if (visible_x < 0 || visible_y < 0 || visible_x >= new_width || visible_y >= new_height) {
+            if (!reported) {
+              fprintf(stderr, "Error in PixelMapper %s MapMatrixToVisible: (%d, %d) -> "
+                      "(%d, %d) [range: %dx%d]\n", mapper.GetName(), x, y,
+                      visible_x, visible_y, new_width, new_height);
+              reported = true;
+            }
+            continue;
+          }
+          next[static_cast<size_t>(visible_y) * new_width + visible_x] = PhysicalIndex(x, y);
+        }
+      }
+    }
+    width = new_width;
+    height = new_height;
+    map_.swap(next);
+    return true;
+  }
+
+  const int physical_width;
+  const int physical_height;
+  int width;   // Visible canvas size.
+  int height;
+
+private:
+  std::vector<int> map_;  // Visible index -> physical index; empty = identity.
+};
+
+// Software framebuffer holding packed RGB888 pixels in physical layout.
 class EmulatorFramebuffer final : public FramebufferInterface {
 public:
-  EmulatorFramebuffer(int width, int height)
-      : width_(width), height_(height),
-        pixels_(static_cast<size_t>(width) * static_cast<size_t>(height) * 3U, 0) {}
+  explicit EmulatorFramebuffer(const EmulatorGeometry *geometry)
+      : geometry_(geometry),
+        pixels_(static_cast<size_t>(geometry->physical_width) * geometry->physical_height * 3U, 0) {}
 
-  int width() const override { return width_; }
-  int height() const override { return height_; }
+  int width() const override { return geometry_->width; }
+  int height() const override { return geometry_->height; }
 
   void SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) override {
-    if (x < 0 || x >= width_ || y < 0 || y >= height_) return;
+    const int index = geometry_->PhysicalIndex(x, y);
+    if (index < 0) return;
     ++generation_;
-    const size_t offset = (static_cast<size_t>(y) * width_ + x) * 3U;
-    pixels_[offset] = r;
-    pixels_[offset + 1] = g;
-    pixels_[offset + 2] = b;
+    uint8_t *pixel = &pixels_[static_cast<size_t>(index) * 3U];
+    pixel[0] = r;
+    pixel[1] = g;
+    pixel[2] = b;
   }
 
   bool GetPixel(int x, int y, uint8_t *r, uint8_t *g, uint8_t *b) const override {
-    if (x < 0 || x >= width_ || y < 0 || y >= height_) return false;
-    const size_t offset = (static_cast<size_t>(y) * width_ + x) * 3U;
-    if (r) *r = pixels_[offset];
-    if (g) *g = pixels_[offset + 1];
-    if (b) *b = pixels_[offset + 2];
+    if (x < 0 || y < 0 || x >= geometry_->width || y >= geometry_->height) return false;
+    const int index = geometry_->PhysicalIndex(x, y);
+    const uint8_t *pixel = index < 0 ? kBlack : &pixels_[static_cast<size_t>(index) * 3U];
+    if (r) *r = pixel[0];
+    if (g) *g = pixel[1];
+    if (b) *b = pixel[2];
     return true;
   }
 
@@ -115,28 +203,61 @@ public:
   }
 
   void CopyFrom(const FramebufferInterface *other) override {
-    if (!other || other == this || other->width() != width_ || other->height() != height_) return;
+    if (!other || other == this || other->width() != width() || other->height() != height()) return;
     const char *data = nullptr;
     size_t len = 0;
     other->Serialize(&data, &len);
     Deserialize(data, len);
   }
 
-  const uint8_t *rgb() const { return pixels_.data(); }
+  // Packed RGB in physical layout.
+  const uint8_t *physical_rgb() const { return pixels_.data(); }
 
   // Bumped on every pixel write, so Render() can tell whether the content
   // changed since it was last shown.
   uint64_t generation() const { return generation_; }
 
 private:
-  const int width_;
-  const int height_;
+  static constexpr uint8_t kBlack[3] = {0, 0, 0};
+  const EmulatorGeometry *const geometry_;
   std::vector<uint8_t> pixels_;
   uint8_t brightness_ = 100;
   uint8_t pwm_bits_ = 8;
   bool luminance_correct_ = false;
   uint64_t generation_ = 0;
 };
+
+constexpr uint8_t EmulatorFramebuffer::kBlack[3];
+
+// Applies "Name[:param];Name[:param]..." like --led-pixel-mapper on hardware.
+// Unknown names are reported by FindPixelMapper() and skipped, as on hardware.
+void ApplyNamedPixelMappers(const char *config, int chain, int parallel,
+                            EmulatorGeometry *geometry) {
+  if (!config) return;
+  const std::string all(config);
+  size_t start = 0;
+  while (start <= all.size()) {
+    size_t end = all.find(';', start);
+    if (end == std::string::npos) end = all.size();
+    std::string name = all.substr(start, end - start);
+    std::string parameter;
+    const size_t colon = name.find(':');
+    const bool has_parameter = colon != std::string::npos;
+    if (has_parameter) {
+      parameter = name.substr(colon + 1);
+      name.resize(colon);
+    }
+    if (name.empty() && !parameter.empty()) {
+      fprintf(stderr, "Stray parameter ':%s' without mapper name ?\n", parameter.c_str());
+    }
+    if (!name.empty()) {
+      const PixelMapper *mapper = FindPixelMapper(name.c_str(), chain, parallel,
+                                                  has_parameter ? parameter.c_str() : nullptr);
+      if (mapper) geometry->Apply(*mapper);
+    }
+    start = end + 1;
+  }
+}
 
 class FrameExportOutput final : public EmulatorOutput {
 public:
@@ -182,9 +303,10 @@ std::unique_ptr<EmulatorOutput> CreateSdlOutput(int, int, const EmulatorOptions 
 class EmulatorMatrix::Impl {
 public:
   Impl(const RGBMatrix::Options &options, const EmulatorOptions &emulator_options,
+       internal::EmulatorGeometry geometry,
        std::vector<std::unique_ptr<internal::EmulatorOutput>> outputs, bool has_window)
-      : width(options.cols * options.chain_length),
-        height(options.rows * options.parallel),
+      : geometry(std::move(geometry)),
+        show_physical_layout(emulator_options.show_physical_layout),
         brightness(internal::ClampBrightness(options.brightness)),
         pwm_bits(static_cast<uint8_t>(std::max(1, std::min(11, options.pwm_bits)))),
         outputs(std::move(outputs)),
@@ -198,7 +320,7 @@ public:
   }
 
   FrameCanvas *CreateFrameCanvas() {
-    auto *canvas = new FrameCanvas(new internal::EmulatorFramebuffer(width, height));
+    auto *canvas = new FrameCanvas(new internal::EmulatorFramebuffer(&geometry));
     canvas->SetBrightness(brightness);
     canvas->SetPWMBits(pwm_bits);
     canvas->set_luminance_correct(luminance_correct);
@@ -221,8 +343,16 @@ public:
     ShowLocked();
   }
 
-  const int width;
-  const int height;
+  bool ApplyPixelMapper(const PixelMapper *mapper) {
+    if (!mapper) return true;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!geometry.Apply(*mapper)) return false;
+    drawn = internal::EmulatorDrawnFrame();  // The visible image changed.
+    return true;
+  }
+
+  internal::EmulatorGeometry geometry;
+  const bool show_physical_layout;
   uint8_t brightness;
   uint8_t pwm_bits;
   bool luminance_correct = false;
@@ -237,7 +367,24 @@ private:
     if (!active || outputs.empty()) return;
     auto *framebuffer = static_cast<internal::EmulatorFramebuffer *>(active->framebuffer());
     if (drawn.Matches(active, framebuffer->generation(), brightness)) return;
-    const uint8_t *rgb = framebuffer->rgb();
+    const uint8_t *physical = framebuffer->physical_rgb();
+    const uint8_t *rgb = physical;
+    int width = geometry.physical_width, height = geometry.physical_height;
+    if (!show_physical_layout && !geometry.identity()) {
+      // Gather the visible image; unmapped visible pixels stay black.
+      width = geometry.width;
+      height = geometry.height;
+      visible.assign(static_cast<size_t>(width) * height * 3U, 0);
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          const int index = geometry.PhysicalIndex(x, y);
+          if (index < 0) continue;
+          std::memcpy(&visible[(static_cast<size_t>(y) * width + x) * 3U],
+                      physical + static_cast<size_t>(index) * 3U, 3);
+        }
+      }
+      rgb = visible.data();
+    }
     if (brightness < 100) {
       const size_t bytes = static_cast<size_t>(width) * height * 3U;
       scaled.resize(bytes);
@@ -253,6 +400,7 @@ private:
   std::vector<std::unique_ptr<internal::EmulatorOutput>> outputs;
   internal::EmulatorFramePacer pacer;
   internal::EmulatorDrawnFrame drawn;
+  std::vector<uint8_t> visible;
   std::vector<uint8_t> scaled;
 };
 
@@ -272,11 +420,19 @@ EmulatorMatrix *EmulatorMatrix::Create(const RGBMatrix::Options &options,
   const int64_t height = static_cast<int64_t>(options.rows) * options.parallel;
   if (width > INT_MAX || height > INT_MAX || width * height > INT_MAX / 3) return nullptr;
 
+  // Multiplex mappers only describe panel wiring; the visible panel keeps
+  // its size, so only the --led-pixel-mapper chain changes the geometry.
+  internal::EmulatorGeometry geometry(static_cast<int>(width), static_cast<int>(height));
+  internal::ApplyNamedPixelMappers(options.pixel_mapper_config, options.chain_length,
+                                   options.parallel, &geometry);
+
   std::vector<std::unique_ptr<internal::EmulatorOutput>> outputs;
   bool has_window = false;
   if (!emulator_options.headless) {
     if (internal::EmulatorHasSdlOutput()) {
-      auto window = internal::CreateSdlOutput(static_cast<int>(width), static_cast<int>(height),
+      const bool physical = emulator_options.show_physical_layout;
+      auto window = internal::CreateSdlOutput(physical ? geometry.physical_width : geometry.width,
+                                              physical ? geometry.physical_height : geometry.height,
                                               emulator_options);
       if (!window) return nullptr;  // Asked for a window that can't open.
       outputs.push_back(std::move(window));
@@ -291,7 +447,7 @@ EmulatorMatrix *EmulatorMatrix::Create(const RGBMatrix::Options &options,
   }
 
   auto *matrix = new EmulatorMatrix(
-      new Impl(options, emulator_options, std::move(outputs), has_window));
+      new Impl(options, emulator_options, std::move(geometry), std::move(outputs), has_window));
   matrix->CreateFrameCanvas();
   return matrix;
 }
@@ -299,8 +455,8 @@ EmulatorMatrix *EmulatorMatrix::Create(const RGBMatrix::Options &options,
 EmulatorMatrix::EmulatorMatrix(Impl *impl) : impl_(impl) {}
 EmulatorMatrix::~EmulatorMatrix() { delete impl_; }
 
-int EmulatorMatrix::width() const { return impl_->width; }
-int EmulatorMatrix::height() const { return impl_->height; }
+int EmulatorMatrix::width() const { return impl_->geometry.width; }
+int EmulatorMatrix::height() const { return impl_->geometry.height; }
 void EmulatorMatrix::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
   if (impl_->active) impl_->active->SetPixel(x, y, r, g, b);
 }
@@ -320,7 +476,9 @@ FrameCanvas *EmulatorMatrix::SwapOnVSync(FrameCanvas *other, unsigned framerate_
   return impl_->SwapOnVSync(other, framerate_fraction);
 }
 
-bool EmulatorMatrix::ApplyPixelMapper(const PixelMapper *mapper) { return mapper == nullptr; }
+bool EmulatorMatrix::ApplyPixelMapper(const PixelMapper *mapper) {
+  return impl_->ApplyPixelMapper(mapper);
+}
 
 void EmulatorMatrix::SetBrightness(uint8_t value) {
   impl_->brightness = internal::ClampBrightness(value);

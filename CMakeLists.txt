@@ -27,7 +27,6 @@ set(MATRIX_HARDWARE_SOURCES
     lib/led-matrix.cc
     lib/framebuffer.cc
     lib/thread.cc
-    lib/pixel-mapper.cc
     lib/multiplex-mappers.cc
     lib/hardware-mapping.c
     lib/options-initialize.cc
@@ -47,6 +46,7 @@ set(MATRIX_PORTABLE_SOURCES
     lib/bdf-font.cc
     lib/graphics.cc
     lib/refresh-timing.cc
+    lib/pixel-mapper.cc
 )
 
 if(WIN32)
@@ -55,6 +55,14 @@ if(WIN32)
     endif()
     set(MATRIX_SOURCES ${MATRIX_PORTABLE_SOURCES} lib/emulator-portable-options.cc
         lib/emulator-flags.cc lib/emulator-core.cc)
+    # pixel-mapper.cc is upstream code using POSIX string functions.
+    if(MSVC)
+        set(_rpi_rgb_led_matrix_force_include /FI${CMAKE_CURRENT_SOURCE_DIR}/lib/win32-compat.h)
+    else()
+        set(_rpi_rgb_led_matrix_force_include -include ${CMAKE_CURRENT_SOURCE_DIR}/lib/win32-compat.h)
+    endif()
+    set_source_files_properties(lib/pixel-mapper.cc PROPERTIES
+        COMPILE_OPTIONS "${_rpi_rgb_led_matrix_force_include}")
 else()
     set(MATRIX_SOURCES ${MATRIX_HARDWARE_SOURCES} ${MATRIX_PORTABLE_SOURCES} lib/emulator-flags.cc)
     if(ENABLE_EMULATOR)
@@ -158,6 +166,9 @@ if(ENABLE_EMULATOR AND BUILD_TESTS)
         target_link_libraries(matrix-factory-flags-test PRIVATE rpi-rgb-led-matrix)
         add_test(NAME matrix-factory-flags-test COMMAND matrix-factory-flags-test)
     endif()
+    add_executable(emulator-pixel-mapper-test examples/emulator-pixel-mapper-test.cc)
+    target_link_libraries(emulator-pixel-mapper-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME emulator-pixel-mapper-test COMMAND emulator-pixel-mapper-test)
     add_executable(emulator-smoke-test examples/emulator-smoke-test.cc)
     target_link_libraries(emulator-smoke-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME emulator-smoke-test COMMAND emulator-smoke-test)
