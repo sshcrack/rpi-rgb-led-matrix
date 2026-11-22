@@ -9,7 +9,7 @@
 #include <vector>
 #include <cstdint>
 #include <chrono>
-#ifndef _WIN32
+#ifdef EMULATOR_TEST_HAS_SDL
 #include <SDL.h>
 #endif
 
@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     return Check(!matrix, "failed SDL display initialization must return null") ? 0 : 1;
   }
 
-#ifndef _WIN32
+#ifdef EMULATOR_TEST_HAS_SDL
   // Headless creation must not initialize any SDL video driver, even an
   // unavailable one. It must also leave the caller's environment unchanged.
   SDL_setenv("SDL_VIDEODRIVER", "matrix-intentionally-unavailable", 1);
@@ -50,6 +50,19 @@ int main(int argc, char **argv) {
       !Check(argument_count == 2 && arguments[1] == keep && arguments[2] == nullptr,
              "consumed flags must be removed from both argc and argv")) return 1;
 
+#ifndef EMULATOR_TEST_HAS_SDL
+  // Without the SDL output there is no window: headless is the default, and
+  // asking for a window falls back to headless instead of failing.
+  if (!Check(EmulatorOptions().headless, "headless must be the default without SDL")) return 1;
+  {
+    EmulatorOptions windowed = emulator_options;
+    windowed.headless = false;
+    std::unique_ptr<EmulatorMatrix> fallback(EmulatorMatrix::Create(options, windowed));
+    if (!Check(bool(fallback), "a window request without SDL must fall back to headless")) return 1;
+  }
+#else
+  if (!Check(!EmulatorOptions().headless, "a window must be the default with SDL")) return 1;
+#endif
   emulator_options.headless = true;
   std::unique_ptr<EmulatorMatrix> matrix(EmulatorMatrix::Create(options, emulator_options));
   if (!Check(bool(matrix), "create headless emulator")) return 1;
@@ -193,7 +206,7 @@ int main(int argc, char **argv) {
   }
 
   matrix->Render();
-#ifndef _WIN32
+#ifdef EMULATOR_TEST_HAS_SDL
   if (!Check(SDL_WasInit(SDL_INIT_VIDEO) == 0, "headless mode must not initialize video") ||
       !Check(std::strcmp(std::getenv("SDL_VIDEODRIVER"), "matrix-intentionally-unavailable") == 0,
              "headless mode must not mutate SDL driver configuration")) return 1;

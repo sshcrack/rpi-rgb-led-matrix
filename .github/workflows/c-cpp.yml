@@ -37,8 +37,19 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
-    - run: cmake -S . -B build -DENABLE_EMULATOR=ON -DBUILD_TESTS=ON
+    - run: cmake -S . -B build -DENABLE_EMULATOR=ON -DENABLE_EMULATOR_SDL=ON -DBUILD_TESTS=ON
     - run: cmake --build build --parallel 2
+    - run: ctest --test-dir build --output-on-failure
+
+  headless-emulator:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Configure the emulator core without SDL
+      run: cmake -S . -B build -DENABLE_EMULATOR=ON -DENABLE_EMULATOR_SDL=OFF -DBUILD_TESTS=ON
+    - run: cmake --build build --parallel 2
+    - name: Check the library doesn't link SDL
+      run: "! ldd build/librpi-rgb-led-matrix.so | grep -i sdl"
     - run: ctest --test-dir build --output-on-failure
 
   windows-emulator:

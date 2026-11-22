@@ -219,14 +219,21 @@ CXXFLAGS=$(CFLAGS) -fno-exceptions -std=c++17
 ENABLE_EMULATOR?=0
 
 # Additional flags for emulator when enabled
+# The emulator core has no dependencies; ENABLE_EMULATOR_SDL=1 (the default)
+# adds the SDL2 window.
+ENABLE_EMULATOR_SDL?=1
 ifeq ($(ENABLE_EMULATOR), 1)
   CXXFLAGS+=-DENABLE_EMULATOR
-  OBJECTS+=emulator.o
-  # SDL2 flags, use sdl2-config tool to find them
-  SDL2_CFLAGS=$(shell sdl2-config --cflags)
-  SDL2_LDFLAGS=$(shell sdl2-config --libs)
-  CXXFLAGS+=$(SDL2_CFLAGS)
-  LDFLAGS+=$(SDL2_LDFLAGS)
+  OBJECTS+=emulator-core.o
+  ifeq ($(ENABLE_EMULATOR_SDL), 1)
+    OBJECTS+=emulator-sdl.o
+    CXXFLAGS+=-DENABLE_EMULATOR_SDL
+    # SDL2 flags, use sdl2-config tool to find them
+    SDL2_CFLAGS=$(shell sdl2-config --cflags)
+    SDL2_LDFLAGS=$(shell sdl2-config --libs)
+    CXXFLAGS+=$(SDL2_CFLAGS)
+    LDFLAGS+=$(SDL2_LDFLAGS)
+  endif
 else
   # Same emulator API, but EmulatorMatrix::Create() returns nullptr.
   OBJECTS+=emulator-unsupported.o
