@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rpi-rgb-led-matrix VERSION 0.2.1 LANGUAGES C CXX)
+project(rpi-rgb-led-matrix VERSION 0.2.2 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
@@ -169,6 +169,9 @@ if(ENABLE_EMULATOR AND BUILD_TESTS)
     add_executable(emulator-pixel-mapper-test examples/emulator-pixel-mapper-test.cc)
     target_link_libraries(emulator-pixel-mapper-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME emulator-pixel-mapper-test COMMAND emulator-pixel-mapper-test)
+    add_executable(emulator-frame-callback-test examples/emulator-frame-callback-test.cc)
+    target_link_libraries(emulator-frame-callback-test PRIVATE rpi-rgb-led-matrix)
+    add_test(NAME emulator-frame-callback-test COMMAND emulator-frame-callback-test)
     add_executable(emulator-smoke-test examples/emulator-smoke-test.cc)
     target_link_libraries(emulator-smoke-test PRIVATE rpi-rgb-led-matrix)
     add_test(NAME emulator-smoke-test COMMAND emulator-smoke-test)

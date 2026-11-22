@@ -268,6 +268,19 @@ Flag                                  | Description
 `--led-emulator-frame-export=<path>`  | Write each shown frame to `<path>`.
 `--led-emulator-physical-layout`      | Show frames in physical panel layout instead of the mapped image, to debug `--led-pixel-mapper` configs.
 
+Programs that embed the emulator (previews, streaming, tests) can get frames
+in-process instead of polling the export file:
+
+```c++
+emulator->SetFrameCallback([](const uint8_t *rgb, int width, int height) {
+  // Packed row-major RGB888, brightness applied, valid only during the call.
+});
+```
+
+The callback runs for every shown frame, on the thread that calls
+`SwapOnVSync()` or `Render()`, alongside the window and the frame export. It
+must not call `SwapOnVSync()`, `Render()` or `SetFrameCallback()` itself.
+
 The frame export file holds the width and height as two native-endian `uint32`
 values, followed by `width * height` RGB888 pixels in row-major order, with
 brightness applied. The emulator writes to `<path>.tmp` and then renames it, so

@@ -285,6 +285,19 @@ private:
   const std::string tmp_path_;
 };
 
+// Hands frames to EmulatorMatrix::SetFrameCallback().
+class FrameCallbackOutput final : public EmulatorOutput {
+public:
+  explicit FrameCallbackOutput(EmulatorMatrix::FrameCallback callback)
+      : callback_(std::move(callback)) {}
+  void ShowFrame(const uint8_t *rgb, int width, int height) override {
+    callback_(rgb, width, height);
+  }
+
+private:
+  const EmulatorMatrix::FrameCallback callback_;
+};
+
 }  // namespace
 
 std::unique_ptr<EmulatorOutput> CreateFrameExportOutput(const std::string &path) {
@@ -351,6 +364,21 @@ public:
     return true;
   }
 
+  void SetFrameCallback(EmulatorMatrix::FrameCallback callback) {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (callback_output) {
+      outputs.erase(std::find_if(outputs.begin(), outputs.end(),
+                                 [this](const std::unique_ptr<internal::EmulatorOutput> &o) {
+                                   return o.get() == callback_output;
+                                 }));
+      callback_output = nullptr;
+    }
+    if (!callback) return;
+    outputs.emplace_back(new internal::FrameCallbackOutput(std::move(callback)));
+    callback_output = outputs.back().get();
+    drawn = internal::EmulatorDrawnFrame();  // Deliver the current frame next.
+  }
+
   internal::EmulatorGeometry geometry;
   const bool show_physical_layout;
   uint8_t brightness;
@@ -398,6 +426,7 @@ private:
 
   std::mutex mutex;
   std::vector<std::unique_ptr<internal::EmulatorOutput>> outputs;
+  internal::EmulatorOutput *callback_output = nullptr;  // Owned by outputs.
   internal::EmulatorFramePacer pacer;
   internal::EmulatorDrawnFrame drawn;
   std::vector<uint8_t> visible;
@@ -504,5 +533,9 @@ bool EmulatorMatrix::luminance_correct() const { return impl_->luminance_correct
 // and Render() on the caller's thread.
 bool EmulatorMatrix::StartRefresh() { return true; }
 void EmulatorMatrix::Render() { impl_->Render(); }
+
+void EmulatorMatrix::SetFrameCallback(FrameCallback callback) {
+  impl_->SetFrameCallback(std::move(callback));
+}
 
 }  // namespace rgb_matrix

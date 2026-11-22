@@ -17,6 +17,8 @@
 #define RPI_RGBMATRIX_EMULATOR_H
 
 #include "led-matrix.h"
+#include <cstdint>
+#include <functional>
 #include <string>
 
 // This header is the same in every build. In a library built without
@@ -124,6 +126,19 @@ public:
   // Does nothing if this exact content was already shown, so calling it
   // after SwapOnVSync() does not draw a frame twice.
   void Render();
+
+  // Called with every shown frame (on SwapOnVSync() and Render()), like
+  // the window and the frame export, so programs that embed the emulator
+  // (previews, streaming, tests) get frames without polling a file.
+  // `rgb` is packed row-major RGB888 with brightness applied, `width` x
+  // `height` as shown (the visible canvas, or the physical panel layout with
+  // EmulatorOptions::show_physical_layout). The pointer is only valid during
+  // the call. It runs on the swapping thread while the swap holds the
+  // emulator's lock, so it must not call SwapOnVSync(), Render() or
+  // SetFrameCallback(). Replaces any previous callback; pass nullptr to
+  // remove it. The next swap or Render() delivers the current frame.
+  using FrameCallback = std::function<void(const uint8_t *rgb, int width, int height)>;
+  void SetFrameCallback(FrameCallback callback);
 
 private:
   class Impl;
