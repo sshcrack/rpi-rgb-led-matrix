@@ -50,8 +50,15 @@ struct EmulatorOptions {
   // If empty, no frame export is performed. (default: "")
   std::string frame_export_path;
 
-  // Run without a visible window using SDL offscreen renderer. (default: false)
+  // Run without a window. (default: false; true in builds without the SDL
+  // window, see ENABLE_EMULATOR_SDL)
   bool headless;
+
+  // Show frames (window and frame export) in physical panel layout, as the
+  // pixels sit on the chained panels, instead of the visible canvas image.
+  // Only differs with pixel mappers; useful to debug mapper configs.
+  // (default: false)
+  bool show_physical_layout;
 
 };
 
@@ -90,7 +97,10 @@ public:
   // refresh, like hardware. Returns the previously displayed canvas.
   FrameCanvas *SwapOnVSync(FrameCanvas *other, unsigned framerate_fraction = 1);
   
-  // Apply pixel mapper to the matrix
+  // Apply a pixel mapper on top of the current ones, like
+  // RGBMatrix::ApplyPixelMapper(). Options::pixel_mapper_config is applied by
+  // Create(), so width(), height() and coordinates match hardware.
+  // Multiplexing only describes panel wiring and is not emulated.
   bool ApplyPixelMapper(const PixelMapper *mapper);
   
   // Set brightness

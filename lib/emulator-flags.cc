@@ -103,6 +103,7 @@ bool ParseEmulatorOptionsFromFlags(int *argc, char ***argv,
     } else if (MatchBoolFlag("hardware-timing", args[i],
                              &options->emulate_hardware_timing)) {
     } else if (MatchBoolFlag("headless", args[i], &options->headless)) {
+    } else if (MatchBoolFlag("physical-layout", args[i], &options->show_physical_layout)) {
     } else {
       consumed = false;
       if (strncmp(args[i], kPrefix, kPrefixLen) == 0) {
@@ -132,11 +133,13 @@ void PrintEmulatorFlags(FILE *out, const EmulatorOptions &defaults) {
           "\t--led-emulator-refresh=<hz>          : Refresh rate Hz that swaps are paced to (Default: %d)\n"
           "\t--led-emulator-hardware-timing       : Pace swaps even when headless (Default: %s)\n"
           "\t--led-emulator-frame-export=<path>   : Write each shown frame as raw RGB binary to path (Default: none)\n"
-          "\t--led-emulator-headless              : Run without a visible window (Default: %s)\n",
+          "\t--led-emulator-headless              : Run without a visible window (Default: %s)\n"
+          "\t--led-emulator-physical-layout       : Show the physical panel layout instead of the mapped image (Default: %s)\n",
           defaults.display_scale, defaults.window_title.c_str(),
           defaults.refresh_rate_hz,
           defaults.emulate_hardware_timing ? "on" : "off",
-          defaults.headless ? "on" : "off");
+          defaults.headless ? "on" : "off",
+          defaults.show_physical_layout ? "on" : "off");
 }
 
 }  // namespace rgb_matrix

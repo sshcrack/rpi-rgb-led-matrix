@@ -26,7 +26,7 @@ namespace rgb_matrix {
 EmulatorOptions::EmulatorOptions()
     : display_scale(10), window_title("RGB Matrix Emulator"),
       emulate_hardware_timing(false), refresh_rate_hz(60), frame_export_path(""),
-      headless(false) {}
+      headless(false), show_physical_layout(false) {}
 
 bool EmulatorMatrix::Supported() { return false; }
 

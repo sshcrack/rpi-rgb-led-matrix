@@ -90,7 +90,7 @@ public:
   }
 
   void ShowFrame(const uint8_t *rgb, int width, int height) override {
-    if (width != width_ || height != height_) return;
+    if ((width != width_ || height != height_) && !Resize(width, height)) return;
     uint8_t *pixels = nullptr;
     int pitch = 0;
     if (SDL_LockTexture(texture_, nullptr, reinterpret_cast<void **>(&pixels), &pitch) != 0) {
@@ -118,8 +118,24 @@ public:
   }
 
 private:
-  const int width_;
-  const int height_;
+  // A pixel mapper applied at runtime changed the frame size.
+  bool Resize(int width, int height) {
+    SDL_Texture *texture = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGB24,
+                                             SDL_TEXTUREACCESS_STREAMING, width, height);
+    if (!texture) {
+      fprintf(stderr, "Unable to create texture: %s\n", SDL_GetError());
+      return false;
+    }
+    SDL_DestroyTexture(texture_);
+    texture_ = texture;
+    width_ = width;
+    height_ = height;
+    SDL_SetWindowSize(window_, width * scale_, height * scale_);
+    return true;
+  }
+
+  int width_;
+  int height_;
   int scale_;
   SDL_Window *window_ = nullptr;
   SDL_Renderer *renderer_ = nullptr;

@@ -266,15 +266,22 @@ Flag                                  | Description
 `--led-emulator-hardware-timing`      | Pace swaps even when headless.
 `--led-emulator-headless`             | No window. The default in builds without the SDL window, where `--led-emulator-no-headless` warns and runs headless.
 `--led-emulator-frame-export=<path>`  | Write each shown frame to `<path>`.
+`--led-emulator-physical-layout`      | Show frames in physical panel layout instead of the mapped image, to debug `--led-pixel-mapper` configs.
 
 The frame export file holds the width and height as two native-endian `uint32`
 values, followed by `width * height` RGB888 pixels in row-major order, with
 brightness applied. The emulator writes to `<path>.tmp` and then renames it, so
 readers never see a half-written frame.
 
-The emulator does not apply pixel mappers or GPIO-specific options, such as
-`--led-slowdown-gpio`. The canvas size is `cols * chain_length` by
-`rows * parallel`.
+The emulator applies `--led-pixel-mapper` (and `ApplyPixelMapper()`) like
+hardware, so `width()`, `height()` and canvas coordinates match a real panel
+with the same options. Like on hardware, the pixels stay in the physical panel
+layout (`cols * chain_length` by `rows * parallel`), so a mapper applied later
+rearranges what is already drawn. The window and frame export show the visible
+(mapped) image; `--led-emulator-physical-layout` shows the pixels as they sit on
+the chained panels instead. The emulator doesn't emulate multiplexing, which
+only describes panel wiring, or GPIO-specific options such as
+`--led-slowdown-gpio`.
 
 ## Bulk RGB frame writes
 
